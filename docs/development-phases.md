@@ -21,4 +21,10 @@ Unknown business rules, especially certificate eligibility and organization visi
 
 The first individual-user experience is now represented in the frontend: a full-width workspace, dashboard empty states, baseline assessment interactions, risk-profile guidance, configurable module cards, and immediate scenario feedback for authority and urgency manipulation. Supabase Auth gates the workspace, assessment answers are validated and scored in the backend, and risk profiles are persisted through the authenticated API.
 
-The next Phase 2 increment should add persisted training attempts and module progress, then load dashboard state from the API instead of only from the current session. Apply `supabase/migrations/202609190002_assessments.sql` after the foundation migration before testing account creation or assessment submission.
+Training answers and module counters now persist through the authenticated API. Apply `supabase/migrations/202609190002_assessments.sql`, `202609190003_backfill_profiles.sql`, and `202609190004_training_seed.sql` in order after the foundation migration before testing the complete individual flow. The next Phase 2 increment is multilingual content and richer configurable module progression, followed by a dedicated test suite for cross-user isolation and repeated attempts.
+
+## Phase 3 progress
+
+The initial Claude integration is ready behind the backend: `POST /api/ai/generate-scenario` validates the request, authenticates the user, limits generation to five requests per hour, validates structured scenario output, and caches successful content in PostgreSQL. Apply `supabase/migrations/202609190005_ai_content.sql` after the training migration before using it with an authenticated account.
+
+The provider is not called during automated tests. Remaining Phase 3 work includes a user-facing generated-scenario experience, moderation checks, usage analytics, multilingual prompt quality review, and provider failure/cost monitoring.

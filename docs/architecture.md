@@ -30,3 +30,7 @@ The backend will grow under `src/modules/` for auth, users, organizations, asses
 ## Storage decisions
 
 Supabase Auth owns credentials, sessions, email verification, and password reset. Application profile and membership data live in PostgreSQL. Supabase Storage is reserved for controlled assets such as certificate files and reviewed training media. AI output is stored only after schema validation and moderation checks.
+
+## Claude integration
+
+Claude is called only by `backend/src/modules/ai.ts`. `AI_PROVIDER_API_KEY` is read from the server environment and is never exposed through Vite or returned by an API response. The service sends a constrained prompt, extracts JSON, validates the result with Zod, and stores valid content in `generated_content`. Repeated requests use the database cache, while the API route applies a per-client rate limit. Provider errors and malformed output become safe public messages; raw provider output is never returned.
