@@ -22,6 +22,8 @@ The frontend runs on `http://localhost:5173` and the API on `http://localhost:40
 
 The first release intentionally does not pretend that assessments, organizations, or AI generation are complete. Those domains are documented and will be added phase by phase with database-backed tests and authorization.
 
+Supabase migrations must be applied in filename order through `202609190007_auth_profiles.sql` for the current authentication, individual, employee, and organization-admin flows.
+
 ## Delivery status
 
 Phase 1 foundation is in progress. See [docs/development-phases.md](docs/development-phases.md) for the MVP boundary and sequencing.

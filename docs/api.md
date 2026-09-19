@@ -17,5 +17,14 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `POST /api/scenarios/:scenarioSlug/answer` records a verified training attempt and updates the user's module progress.
 * `GET /api/users/me/training-progress` returns the authenticated user's aggregate training attempts.
 * `POST /api/ai/generate-scenario` asks Claude for one structured scenario and caches it by user, module, language, and prompt. It is authenticated and limited to five requests per hour.
+* `POST /api/organizations` creates an organization and makes the authenticated creator its admin.
+* `POST /api/organizations/:organizationId/invitations` creates a hashed, expiring invitation for an admin-managed organization.
+* `POST /api/organizations/invitations/accept` accepts an invitation for the authenticated user.
+* `GET /api/organizations/:organizationId/dashboard` returns scoped aggregate employee progress and risk data.
+* `POST /api/organizations/:organizationId/reports` generates a scoped organization report.
+* `PATCH /api/users/me` updates the authenticated user's preferred language.
+* `GET /api/admin/overview` returns protected platform counts and recent users, organizations, modules, and AI content for `marics_admin` users.
+* `POST /api/admin/modules` and `PATCH /api/admin/modules/:moduleId` create and publish configurable training modules.
+* `PATCH /api/admin/settings` updates the supported platform languages for `marics_admin` users.
 
 Authenticated routes must derive the subject from the Supabase token and confirm all organization membership server-side. Public errors are stable, human-readable codes; stack traces and database messages remain server-side.

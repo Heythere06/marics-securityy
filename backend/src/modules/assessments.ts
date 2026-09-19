@@ -6,13 +6,20 @@ export const assessmentSubmissionSchema = z.object({
     questionKey: z.string().min(1).max(80),
     selectedOption: z.number().int().min(0).max(2),
     riskDimension: z.string().min(1).max(80),
-  })).length(3),
+  })).length(10),
 });
 
 const correctOptions: Record<string, number> = {
   urgency: 1,
   authority: 2,
   curiosity: 0,
+  fear: 1,
+  trust: 2,
+  scarcity: 1,
+  social_pressure: 2,
+  financial_manipulation: 0,
+  credential_theft: 1,
+  impersonation: 2,
 };
 
 export async function submitAssessment(client: SupabaseClient, user: User, input: z.infer<typeof assessmentSubmissionSchema>) {
