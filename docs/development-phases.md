@@ -16,3 +16,9 @@ AI generation, advanced reporting, certificates, and the admin content console a
 6. Production: deployment, HTTPS, backups, monitoring, security testing, performance testing, and release QA.
 
 Unknown business rules, especially certificate eligibility and organization visibility of individual risk, remain configurable or explicitly unresolved until confirmed.
+
+## Phase 2 progress
+
+The first individual-user experience is now represented in the frontend: a full-width workspace, dashboard empty states, baseline assessment interactions, risk-profile guidance, configurable module cards, and immediate scenario feedback for authority and urgency manipulation. Supabase Auth gates the workspace, assessment answers are validated and scored in the backend, and risk profiles are persisted through the authenticated API.
+
+The next Phase 2 increment should add persisted training attempts and module progress, then load dashboard state from the API instead of only from the current session. Apply `supabase/migrations/202609190002_assessments.sql` after the foundation migration before testing account creation or assessment submission.
