@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, submitAssessment } from './modules/assessments.js';
-import { getTrainingSummary, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
+import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
 import { generateScenario, scenarioGenerationSchema } from './modules/ai.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, invitationSchema, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema } from './modules/organizations.js';
 import { adminModuleSchema, adminPublishSchema, adminSettingSchema, createAdminModule, getAdminOverview, requireMaricsAdmin, setAdminModulePublished, setAdminSetting } from './modules/admin.js';
@@ -40,7 +40,13 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to access the MARICS admin dashboard.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin overview failed');
-      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load the admin dashboard.' });
+      const detail = error instanceof Error ? error.message : String(error);
+      const migrationMissing = detail.includes('get_admin_overview') || detail.includes('PGRST202') || detail.includes('42883');
+      return reply.code(500).send({
+        error: 'ADMIN_UNAVAILABLE',
+        message: migrationMissing ? 'The admin database migration is not applied. Apply 202609190008_admin_control_plane.sql, then retry.' : 'We could not load the admin dashboard.',
+        details: process.env.NODE_ENV === 'production' ? undefined : detail,
+      });
     }
   });
 
@@ -269,6 +275,32 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view training progress.' });
       request.log.error(error, 'Training progress lookup failed');
       return reply.code(500).send({ error: 'TRAINING_PROGRESS_UNAVAILABLE', message: 'We could not load your training progress.' });
+    }
+  });
+
+  app.get('/api/training/modules', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const modules = await listPublishedModules(createAuthenticatedClient(auth.accessToken!));
+      return reply.send({ modules });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view training modules.' });
+      request.log.error(error, 'Training modules lookup failed');
+      return reply.code(500).send({ error: 'TRAINING_MODULES_UNAVAILABLE', message: 'We could not load the available training modules.' });
+    }
+  });
+
+  app.get('/api/training/scenarios/:scenarioSlug', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const scenarioSlug = z.string().regex(/^[a-z0-9-]+$/).parse((request.params as { scenarioSlug: string }).scenarioSlug);
+      const scenario = await getScenario(createAuthenticatedClient(auth.accessToken!), scenarioSlug);
+      return reply.send({ scenario });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this scenario.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid training scenario.' });
+      request.log.error(error, 'Training scenario lookup failed');
+      return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
     }
   });
 

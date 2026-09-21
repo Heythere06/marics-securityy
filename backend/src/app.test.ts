@@ -21,6 +21,8 @@ describe('health endpoint', () => {
   });
 
   it.each([
+    ['GET', '/api/training/modules', undefined],
+    ['GET', '/api/training/scenarios/whatsapp-gift-cards', undefined],
     ['POST', '/api/organizations', { name: 'Acme Security' }],
     ['POST', '/api/organizations/00000000-0000-0000-0000-000000000001/invitations', { email: 'employee@example.com' }],
     ['POST', '/api/organizations/invitations/accept', { token: 'a'.repeat(64) }],

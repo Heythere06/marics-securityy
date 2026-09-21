@@ -15,7 +15,9 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `/api/certificates` and `/api/certificates/verify/:verificationId`
 * `/api/organizations/:organizationId/reports`
 * `POST /api/scenarios/:scenarioSlug/answer` records a verified training attempt and updates the user's module progress.
-* `GET /api/users/me/training-progress` returns the authenticated user's aggregate training attempts.
+* `GET /api/training/modules` returns published modules and their available scenario slugs for the authenticated user.
+* `GET /api/training/scenarios/:scenarioSlug` returns a published scenario, localized content, options, risk dimensions, and stored feedback.
+* `GET /api/users/me/training-progress` returns the authenticated user's aggregate attempts plus persisted per-module attempts, correct answers, scenario counts, and completion state.
 * `POST /api/ai/generate-scenario` asks Claude for one structured scenario and caches it by user, module, language, and prompt. It is authenticated and limited to five requests per hour.
 * `POST /api/organizations` creates an organization and makes the authenticated creator its admin.
 * `POST /api/organizations/:organizationId/invitations` creates a hashed, expiring invitation for an admin-managed organization.

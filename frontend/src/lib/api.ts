@@ -21,13 +21,13 @@ export async function saveTrainingAnswer(accessToken: string, scenarioSlug: stri
     body: JSON.stringify({ optionKey }),
   });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training answer could not be saved');
-  return (await response.json()) as { isCorrect: boolean; progress: { scenarios_attempted: number; scenarios_correct: number } };
+  return (await response.json()) as { isCorrect: boolean; feedback: Record<string, string>; progress: { scenarios_attempted: number; scenarios_correct: number } };
 }
 
 export async function getTrainingSummary(accessToken: string) {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/users/me/training-progress`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training progress could not be loaded');
-  return (await response.json()) as { attempted: number; correct: number; lastAttemptAt: string | null };
+  return (await response.json()) as { attempted: number; correct: number; lastAttemptAt: string | null; modules: Array<{ id: string; slug: string; title: Record<string, string>; scenarioCount: number; scenariosAttempted: number; scenariosCorrect: number; completed: boolean }>; recommendation: { slug: string; title: Record<string, string>; reason: 'focus-area' | 'next-unfinished' } | null };
 }
 
 export async function getOrganizations(accessToken: string) {
@@ -74,9 +74,14 @@ export async function updateLanguage(accessToken: string, preferredLanguage: 'en
 export type AdminOverview = { counts: { users: number; organizations: number; modules: number; publishedModules: number; generatedContent: number; certificates: number }; languages: string[]; users: Array<{ id: string; name: string; role: string; language: string; createdAt: string }>; organizations: Array<{ id: string; name: string; createdAt: string }>; modules: Array<{ id: string; slug: string; title: Record<string, string>; published: boolean }>; aiContent: Array<{ id: string; moduleSlug: string; language: string; provider: string; model: string; createdAt: string }> };
 
 export async function getAdminOverview(accessToken: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/admin/overview`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error((await response.json()).message ?? 'Admin dashboard could not be loaded');
-  return (await response.json()).overview as AdminOverview;
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/admin/overview`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
+  const payload = await response.json().catch(() => ({})) as { message?: string; details?: string; overview?: AdminOverview };
+  if (!response.ok) {
+    const reason = payload.details ? ` ${payload.details}` : '';
+    throw new Error(`${payload.message ?? 'Admin dashboard could not be loaded'}${reason} [HTTP ${response.status}]`);
+  }
+  if (!payload.overview) throw new Error('Admin dashboard returned no data.');
+  return payload.overview;
 }
 
 export async function createAdminModule(accessToken: string, input: { slug: string; title: string; description: string }) {
@@ -94,4 +99,19 @@ export async function setAdminModulePublished(accessToken: string, moduleId: str
 export async function setAdminLanguages(accessToken: string, languages: string[]) {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/admin/settings`, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'supported_languages', value: languages }) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Platform setting could not be updated');
+}
+
+export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; scenarioCount: number; scenarioSlugs: string[] };
+export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C'; content: Record<string, string>; is_correct: boolean; feedback: Record<string, string> }> };
+
+export async function getTrainingModules(accessToken: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Training modules could not be loaded');
+  return (await response.json()).modules as TrainingModule[];
+}
+
+export async function getTrainingScenario(accessToken: string, scenarioSlug: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/scenarios/${scenarioSlug}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Training scenario could not be loaded');
+  return (await response.json()).scenario as TrainingScenario;
 }

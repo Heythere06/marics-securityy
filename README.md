@@ -22,7 +22,7 @@ The frontend runs on `http://localhost:5173` and the API on `http://localhost:40
 
 The first release intentionally does not pretend that assessments, organizations, or AI generation are complete. Those domains are documented and will be added phase by phase with database-backed tests and authorization.
 
-Supabase migrations must be applied in filename order through `202609190007_auth_profiles.sql` for the current authentication, individual, employee, and organization-admin flows.
+Supabase migrations must be applied in filename order through `202609190008_admin_control_plane.sql` for the current authentication, individual, employee, organization-admin, and MARICS-admin flows. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
 
 ## Delivery status
 
