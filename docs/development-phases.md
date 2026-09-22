@@ -4,7 +4,7 @@
 
 The first usable release includes Supabase authentication, multilingual onboarding, a database-backed assessment, deterministic risk dimensions, scenario-based training with immediate explanations, persisted progress, an individual dashboard, and the first organization membership/invitation flow. It must include authorization, RLS, loading/error/empty states, focused tests, and audit-friendly logs.
 
-AI generation, advanced reporting, certificates, and the admin content console are post-foundation increments. They are not represented as complete by placeholder UI.
+AI generation, certificates, production deployment, and deeper admin content CRUD remain later increments. The current repository includes the first audited admin control plane and organization aggregate reporting, but those surfaces are intentionally not presented as fully production-complete.
 
 ## Delivery sequence
 
@@ -21,7 +21,7 @@ Unknown business rules, especially certificate eligibility and organization visi
 
 The first individual-user experience is now represented in the frontend: a full-width workspace, dashboard empty states, baseline assessment interactions, risk-profile guidance, configurable module cards, and immediate scenario feedback for authority and urgency manipulation. Supabase Auth gates the workspace, assessment answers are validated and scored in the backend, and risk profiles are persisted through the authenticated API.
 
-Training answers and module counters now persist through the authenticated API. Published modules and scenarios now load from PostgreSQL, users can choose an available scenario, content/options/feedback use the selected language with English fallback, and the dashboard shows persisted per-module attempt progress. Apply `supabase/migrations/202609190002_assessments.sql`, `202609190003_backfill_profiles.sql`, and `202609190004_training_seed.sql` in order after the foundation migration before testing the complete individual flow. Remaining Phase 2 work is recommendation persistence and dedicated database integration tests for cross-user isolation and repeated attempts.
+Training answers and module counters now persist through the authenticated API. Published modules and scenarios now load from PostgreSQL, users can choose an available scenario, content/options/feedback use the selected language with English fallback, the dashboard shows persisted per-module attempt progress, and risk-profile-based recommendations are returned by the progress service. Phase 2 is functionally complete for the current MVP boundary; remaining hardening is authenticated integration coverage and recommendation UX refinement.
 
 ## Phase 3 progress
 
@@ -33,7 +33,7 @@ The provider is not called during automated tests. Remaining Phase 3 work includ
 
 The organization backend foundation now supports organization creation, hashed expiring invitations, employee membership acceptance, admin-scoped dashboards, aggregate team progress/risk data, and reports. Apply `supabase/migrations/202609190006_organizations.sql` after the earlier migrations. The database functions enforce organization admin membership independently of URL parameters, and the API regression suite covers unauthenticated access to every organization endpoint.
 
-Remaining Phase 4 work is the organization-facing UI, invitation delivery, paginated employee management, privacy review of employee-level risk visibility, and authenticated cross-organization integration tests against a Supabase test project.
+The organization dashboard API now returns aggregate team-risk breakdowns and the report endpoint supports privacy-scoped CSV output. Remaining Phase 4 work is invitation delivery, paginated employee management, visual team-risk breakdowns in the org UI, privacy review of employee-level risk visibility, and authenticated cross-organization integration tests against a Supabase test project.
 
 ## Auth and user types
 

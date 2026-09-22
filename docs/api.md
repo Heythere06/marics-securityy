@@ -6,7 +6,7 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 
 `GET /health` returns `{ "status": "ok", "service": "marics-api" }` without requiring a database connection. This supports deployment probes while database-backed features are added.
 
-## Planned endpoint groups
+## Endpoint groups
 
 * `/api/users/me`
 * `/api/organizations` and `/api/organizations/:organizationId/invitations`
@@ -23,10 +23,25 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `POST /api/organizations/:organizationId/invitations` creates a hashed, expiring invitation for an admin-managed organization.
 * `POST /api/organizations/invitations/accept` accepts an invitation for the authenticated user.
 * `GET /api/organizations/:organizationId/dashboard` returns scoped aggregate employee progress and risk data.
-* `POST /api/organizations/:organizationId/reports` generates a scoped organization report.
+* `POST /api/organizations/:organizationId/reports` generates a scoped organization report; pass `{ "format": "csv" }` for a downloadable aggregate CSV with no employee names or individual answers.
 * `PATCH /api/users/me` updates the authenticated user's preferred language.
 * `GET /api/admin/overview` returns protected platform counts and recent users, organizations, modules, and AI content for `marics_admin` users.
 * `POST /api/admin/modules` and `PATCH /api/admin/modules/:moduleId` create and publish configurable training modules.
 * `PATCH /api/admin/settings` updates the supported platform languages for `marics_admin` users.
+* `GET /api/admin/users` and `GET /api/admin/users/:userId` provide protected user search/detail access.
+* `PATCH /api/admin/users/:userId/role` changes a role through the audited admin service.
+* `PATCH /api/admin/users/:userId/suspended` suspends or reactivates an account.
+* `POST /api/admin/users/:userId/resend-verification` requests a server-side verification resend.
+* `GET /api/admin/organizations` and `GET /api/admin/organizations/:organizationId` provide organization search/detail access.
+* `POST /api/admin/organizations` creates an organization through the audited admin path.
+* `PATCH /api/admin/organizations/:organizationId/suspended` suspends or reactivates an organization.
+* `PATCH /api/admin/organizations/:organizationId/admins` assigns or removes an organization administrator.
+* `GET /api/admin/training/catalog` returns module and language-completeness data.
+* `PATCH /api/admin/training/modules/:moduleId` updates module content/publication.
+* `PATCH /api/admin/training/modules/:moduleId/archive` archives or restores a module.
+* `GET /api/admin/analytics` returns platform-wide weakness and completion aggregates.
+* `GET /api/admin/audit-log` returns the protected admin audit trail.
+* `GET /api/assessment/onboarding` returns the ten authenticated onboarding scenarios.
+* `GET /api/users/me/risk-profile` returns the authenticated user's stored risk profile.
 
 Authenticated routes must derive the subject from the Supabase token and confirm all organization membership server-side. Public errors are stable, human-readable codes; stack traces and database messages remain server-side.

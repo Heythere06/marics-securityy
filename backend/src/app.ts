@@ -4,11 +4,45 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
-import { assessmentSubmissionSchema, submitAssessment } from './modules/assessments.js';
+import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
 import { generateScenario, scenarioGenerationSchema } from './modules/ai.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, invitationSchema, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema } from './modules/organizations.js';
-import { adminModuleSchema, adminPublishSchema, adminSettingSchema, createAdminModule, getAdminOverview, requireMaricsAdmin, setAdminModulePublished, setAdminSetting } from './modules/admin.js';
+import {
+  adminArchiveSchema,
+  adminModuleSchema,
+  adminScenarioSchema,
+  adminModuleUpdateSchema,
+  adminOrgAdminSchema,
+  adminOrganizationSchema,
+  adminPublishSchema,
+  adminSettingSchema,
+  adminSuspendSchema,
+  adminUserRoleSchema,
+  archiveAdminTrainingModule,
+  createAdminModule,
+  createAdminScenario,
+  createAdminOrganization,
+  getAdminOrganization,
+  getAdminOverview,
+  getAdminPlatformAnalytics,
+  getAdminTrainingCatalog,
+  getAdminUser,
+  listAdminAuditLog,
+  listAdminScenarios,
+  requireMaricsAdmin,
+  resendUserVerification,
+  searchAdminOrganizations,
+  searchAdminUsers,
+  setAdminModulePublished,
+  setAdminOrganizationAdmin,
+  setAdminOrganizationSuspended,
+  setAdminSetting,
+  setAdminUserRole,
+  setAdminUserSuspended,
+  updateAdminTrainingModule,
+} from './modules/admin.js';
+import { getOrganizationReportCsv } from './modules/organizations.js';
 
 type AuthenticatedRequest = { userId?: string; accessToken?: string };
 
@@ -59,9 +93,39 @@ export function buildApp() {
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage modules.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Enter a valid module slug, title, and description.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Enter a valid module slug, title, and description.', details: error.issues.map((issue) => issue.path.join('.') || 'module').join(', ') });
       request.log.error(error, 'Admin module creation failed');
       return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not create the module.' });
+    }
+  });
+
+  app.post('/api/admin/scenarios', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.code(201).send({ scenario: await createAdminScenario(client, adminScenarioSchema.parse(request.body)) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
+      if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Enter a scenario, exactly three options, and one correct answer.' });
+      request.log.error(error, 'Admin scenario creation failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not create the scenario.' });
+    }
+  });
+
+  app.get('/api/admin/modules/:moduleId/scenarios', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ scenarios: await listAdminScenarios(client, z.string().uuid().parse((request.params as { moduleId: string }).moduleId)) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
+      if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Choose a valid module.' });
+      request.log.error(error, 'Admin scenario list failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load module scenarios.' });
     }
   });
 
@@ -78,6 +142,235 @@ export function buildApp() {
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Provide a valid publication state.' });
       request.log.error(error, 'Admin module update failed');
       return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the module.' });
+    }
+  });
+
+  app.get('/api/admin/users', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const query = z.object({ q: z.string().optional() }).parse(request.query);
+      return reply.send({ users: await searchAdminUsers(client, query.q ?? '') });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage users.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin user search failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not search users.' });
+    }
+  });
+
+  app.get('/api/admin/users/:userId', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ user: await getAdminUser(client, z.string().uuid().parse((request.params as { userId: string }).userId)) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this user.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin user lookup failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load the user record.' });
+    }
+  });
+
+  app.patch('/api/admin/users/:userId/role', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const userId = z.string().uuid().parse((request.params as { userId: string }).userId);
+      const input = adminUserRoleSchema.parse(request.body);
+      return reply.send({ user: await setAdminUserRole(client, userId, input.role) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update user roles.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ROLE', message: 'Choose a supported role.' });
+      request.log.error(error, 'Admin user role update failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the user role.' });
+    }
+  });
+
+  app.patch('/api/admin/users/:userId/suspended', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const userId = z.string().uuid().parse((request.params as { userId: string }).userId);
+      const input = adminSuspendSchema.parse(request.body);
+      return reply.send({ user: await setAdminUserSuspended(client, userId, input.suspended) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage user access.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_STATE', message: 'Provide a suspension state.' });
+      request.log.error(error, 'Admin user suspension failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the user account.' });
+    }
+  });
+
+  app.post('/api/admin/users/:userId/resend-verification', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await resendUserVerification(client, z.string().uuid().parse((request.params as { userId: string }).userId));
+      return reply.code(202).send({ status: 'queued' });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to resend verification.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof Error && error.message === 'ADMIN_VERIFICATION_UNAVAILABLE') return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Verification resend requires the Supabase service role on the API server.' });
+      request.log.error(error, 'Admin verification resend failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not resend verification.' });
+    }
+  });
+
+  app.get('/api/admin/organizations', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const query = z.object({ q: z.string().optional() }).parse(request.query);
+      return reply.send({ organizations: await searchAdminOrganizations(client, query.q ?? '') });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organizations.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin organization search failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not search organizations.' });
+    }
+  });
+
+  app.get('/api/admin/organizations/:organizationId', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ organization: await getAdminOrganization(client, z.string().uuid().parse((request.params as { organizationId: string }).organizationId)) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this organization.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin organization lookup failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load the organization record.' });
+    }
+  });
+
+  app.post('/api/admin/organizations', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.code(201).send({ organization: await createAdminOrganization(client, adminOrganizationSchema.parse(request.body).name) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to create organizations.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ORGANIZATION', message: 'Enter a valid organization name.' });
+      request.log.error(error, 'Admin organization creation failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not create the organization.' });
+    }
+  });
+
+  app.patch('/api/admin/organizations/:organizationId/suspended', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const organizationId = z.string().uuid().parse((request.params as { organizationId: string }).organizationId);
+      return reply.send({ organization: await setAdminOrganizationSuspended(client, organizationId, adminSuspendSchema.parse(request.body).suspended) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organizations.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin organization suspension failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the organization.' });
+    }
+  });
+
+  app.patch('/api/admin/organizations/:organizationId/admins', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const organizationId = z.string().uuid().parse((request.params as { organizationId: string }).organizationId);
+      const input = adminOrgAdminSchema.parse(request.body);
+      await setAdminOrganizationAdmin(client, organizationId, input.userId, input.isAdmin);
+      return reply.send({ status: 'updated' });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organization admins.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ADMIN', message: 'Provide a valid organization admin assignment.' });
+      request.log.error(error, 'Admin organization admin update failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the organization admin.' });
+    }
+  });
+
+  app.get('/api/admin/training/catalog', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ catalog: await getAdminTrainingCatalog(client) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training content.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin training catalog failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load the training catalog.' });
+    }
+  });
+
+  app.patch('/api/admin/training/modules/:moduleId', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const moduleId = z.string().uuid().parse((request.params as { moduleId: string }).moduleId);
+      return reply.send({ module: await updateAdminTrainingModule(client, moduleId, adminModuleUpdateSchema.parse(request.body)) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training modules.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Provide valid module content.' });
+      request.log.error(error, 'Admin training module update failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not update the training module.' });
+    }
+  });
+
+  app.patch('/api/admin/training/modules/:moduleId/archive', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const moduleId = z.string().uuid().parse((request.params as { moduleId: string }).moduleId);
+      return reply.send({ module: await archiveAdminTrainingModule(client, moduleId, adminArchiveSchema.parse(request.body).archived) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training modules.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin training module archive failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not archive the training module.' });
+    }
+  });
+
+  app.get('/api/admin/analytics', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ analytics: await getAdminPlatformAnalytics(client) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view analytics.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin analytics failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load platform analytics.' });
+    }
+  });
+
+  app.get('/api/admin/audit-log', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      const query = z.object({ limit: z.coerce.number().int().min(1).max(200).optional() }).parse(request.query);
+      return reply.send({ entries: await listAdminAuditLog(client, query.limit ?? 50) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view the audit log.' });
+      if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin audit log failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load the audit log.' });
     }
   });
 
@@ -166,7 +459,14 @@ export function buildApp() {
   app.post('/api/organizations/:organizationId/reports', async (request, reply) => {
     try {
       const auth = await requireUser(request);
-      const report = await getOrganizationReport(createAuthenticatedClient(auth.accessToken!), (request.params as { organizationId: string }).organizationId);
+      const organizationId = (request.params as { organizationId: string }).organizationId;
+      const format = z.object({ format: z.enum(['json', 'csv']).optional() }).parse(request.body ?? {});
+      const client = createAuthenticatedClient(auth.accessToken!);
+      if (format.format === 'csv') {
+        const csv = await getOrganizationReportCsv(client, organizationId);
+        return reply.code(201).type('text/csv').send(csv);
+      }
+      const report = await getOrganizationReport(client, organizationId);
       return reply.code(201).send({ report });
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate organization reports.' });
@@ -193,6 +493,18 @@ export function buildApp() {
     }
   });
 
+  app.get('/api/assessment/onboarding', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const scenarios = await getOnboardingAssessment(createAuthenticatedClient(auth.accessToken!));
+      return reply.send({ scenarios });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to start your assessment.' });
+      request.log.error(error, 'Onboarding assessment lookup failed');
+      return reply.code(500).send({ error: 'ASSESSMENT_UNAVAILABLE', message: 'We could not load the onboarding assessment.' });
+    }
+  });
+
   app.post('/api/assessments', async (request, reply) => {
     try {
       const auth = await requireUser(request);
@@ -212,7 +524,7 @@ export function buildApp() {
   app.get('/api/users/me/risk-profile', async (request, reply) => {
     try {
       const auth = await requireUser(request);
-      const { data, error } = await createAuthenticatedClient(auth.accessToken!).from('risk_profiles').select('strongest_dimension, focus_dimension, awareness_score, updated_at').eq('user_id', auth.userId).maybeSingle();
+      const { data, error } = await createAuthenticatedClient(auth.accessToken!).from('risk_profiles').select('strongest_dimension, focus_dimension, awareness_score, category_scores, updated_at').eq('user_id', auth.userId).maybeSingle();
       if (error) throw error;
       return reply.send({ profile: data });
     } catch (error) {

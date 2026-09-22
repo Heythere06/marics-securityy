@@ -20,6 +20,14 @@ Phase 4 adds `organization_invitations` and PostgreSQL security-definer function
 
 Apply `202609190007_auth_profiles.sql` after the organization migration. It extends profiles with account intent and updates the Auth trigger to persist country and preferred language metadata. It also creates the only role-promotion path for organization administrators.
 
-The current migration sequence ends at `202609190007_auth_profiles.sql`. The assessment API requires ten answers; existing assessment rows remain compatible because answer count is enforced by the validated API contract rather than a database row-count constraint.
+The current migration sequence ends at `202609190014_schema_repair.sql`. Apply every migration in filename order. The assessment API requires ten answers; assessment rows remain compatible because answer count is enforced by the validated API contract rather than a database row-count constraint.
 
 The same migration redefines invitation acceptance to set the authenticated user's role to `employee`. This update occurs only after a valid, unexpired, hashed invitation token is consumed; users cannot assign themselves an employee or administrator role from the frontend.
+
+Migration `202609190011_onboarding_assessment.sql` adds `risk_profiles.category_scores`, seeds the ten-question baseline assessment, and creates the authenticated onboarding assessment RPC.
+
+Migration `202609190012_audit_log_and_admin.sql` adds the admin audit trail, suspension/archive fields, platform settings, admin RPCs, and platform analytics.
+
+Migration `202609190013_org_team_risk.sql` adds organization team-risk aggregation and a privacy-scoped CSV report function.
+
+Migration `202609190014_schema_repair.sql` repairs missing additive columns, settings, and RLS policies after interrupted/manual setup. It does not replace the ordered migration chain.

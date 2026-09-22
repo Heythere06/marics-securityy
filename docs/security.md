@@ -9,7 +9,7 @@
 * Helmet-style security headers, CORS allowlisting, JSON body limits, and per-route rate limits are enabled at the API boundary.
 * AI keys and the Supabase service-role key exist only in backend environment variables. AI output is schema-validated, bounded, stored, and rate-limited.
 * Logs record authentication failures, authorization failures, important organization actions, and system errors without passwords, tokens, or API keys.
-* The backend includes a deterministic progress-scoping test and an opt-in Supabase integration test. The integration test requires a dedicated test project and two test users; it is never run against the development project automatically.
+* The backend includes assessment scoring tests, organization membership isolation tests, training progress scoping tests, route authorization tests, and an opt-in Supabase integration test. The integration test requires a dedicated test project and two test users; it is never run against the development project automatically.
 
 ## Threats to test before production
 

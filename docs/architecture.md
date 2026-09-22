@@ -16,7 +16,7 @@ The frontend owns presentation, navigation, forms, and query caching. It does no
 
 ## Domain modules
 
-The backend will grow under `src/modules/` for auth, users, organizations, assessments, training, risk, AI, certificates, reports, and admin. Each module may expose routes, schemas, services, and repositories. Cross-domain rules belong in services, not React components or route handlers.
+The backend is currently split under `src/modules/` into assessments, training, organizations, admin, audit, and AI services. Certificates remain a future domain. Each module exposes validation and service functions used by thin Fastify routes. Cross-domain rules belong in services, not React components or route handlers.
 
 ## Request flow
 
@@ -30,6 +30,10 @@ The backend will grow under `src/modules/` for auth, users, organizations, asses
 ## Storage decisions
 
 Supabase Auth owns credentials, sessions, email verification, and password reset. Application profile and membership data live in PostgreSQL. Supabase Storage is reserved for controlled assets such as certificate files and reviewed training media. AI output is stored only after schema validation and moderation checks.
+
+## Admin and audit integration
+
+MARICS-admin routes first validate the Supabase identity and call `requireMaricsAdmin`. Database RPCs repeat the role check. Mutating admin RPCs record actor, action, target, metadata, and timestamp in `audit_log`. Admin reads use protected RPCs rather than broad client-side table access.
 
 ## Claude integration
 

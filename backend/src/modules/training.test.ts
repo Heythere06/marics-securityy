@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTrainingSummary } from './training.js';
+import { getTrainingSummary, splitOptionFeedback } from './training.js';
 
 function createQuery<T>(data: T, calls: string[]) {
   const query = {
@@ -23,6 +23,25 @@ function createQuery<T>(data: T, calls: string[]) {
   };
   return query;
 }
+
+describe('training answer explanations', () => {
+  it('returns choice feedback and a threat-focused explanation from structured option feedback', () => {
+    const parsed = splitOptionFeedback({
+      en: {
+        choice: 'The pressure to act quickly is a warning sign.',
+        explanation: 'Verify through a trusted channel before sending money or codes.',
+      },
+    });
+
+    expect(parsed.choice.en).toContain('pressure');
+    expect(parsed.explanation.en).toContain('trusted channel');
+  });
+
+  it('supports legacy plain-string feedback', () => {
+    const parsed = splitOptionFeedback({ en: 'Verify through a known phone number or in person.' });
+    expect(parsed.choice.en).toBe(parsed.explanation.en);
+  });
+});
 
 describe('training progress isolation', () => {
   it('scopes attempts, progress, and risk profile reads to the authenticated user', async () => {

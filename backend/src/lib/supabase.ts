@@ -10,3 +10,10 @@ export function createAuthenticatedClient(accessToken: string): SupabaseClient {
     global: { headers: { Authorization: `Bearer ${accessToken}` } },
   });
 }
+
+export function createServiceClient(): SupabaseClient {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('Supabase service client is not configured');
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+}

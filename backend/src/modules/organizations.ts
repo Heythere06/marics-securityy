@@ -11,7 +11,14 @@ export async function createOrganization(client: SupabaseClient, input: z.infer<
   return organization as { id: string; name: string };
 }
 
+export async function requireOrganizationAdmin(client: SupabaseClient, organizationId: string) {
+  const { data, error } = await client.from('organization_memberships').select('is_admin').eq('organization_id', organizationId).maybeSingle();
+  if (error) throw error;
+  if (!data?.is_admin) throw new Error('FORBIDDEN');
+}
+
 export async function createInvitation(client: SupabaseClient, organizationId: string, email: string) {
+  await requireOrganizationAdmin(client, organizationId);
   const { data, error } = await client.rpc('create_organization_invitation', { target_org: organizationId, target_email: email });
   if (error) throw error;
   return data as { id: string; email: string; token: string; expiresAt: string };
@@ -24,15 +31,24 @@ export async function acceptInvitation(client: SupabaseClient, token: string) {
 }
 
 export async function getOrganizationDashboard(client: SupabaseClient, organizationId: string) {
+  await requireOrganizationAdmin(client, organizationId);
   const { data, error } = await client.rpc('get_organization_dashboard', { target_org: organizationId });
   if (error) throw error;
   return data;
 }
 
 export async function getOrganizationReport(client: SupabaseClient, organizationId: string) {
+  await requireOrganizationAdmin(client, organizationId);
   const { data, error } = await client.rpc('get_organization_report', { target_org: organizationId });
   if (error) throw error;
   return data;
+}
+
+export async function getOrganizationReportCsv(client: SupabaseClient, organizationId: string) {
+  await requireOrganizationAdmin(client, organizationId);
+  const { data, error } = await client.rpc('get_organization_report_csv', { target_org: organizationId });
+  if (error) throw error;
+  return data as string;
 }
 
 export async function listOrganizations(client: SupabaseClient) {

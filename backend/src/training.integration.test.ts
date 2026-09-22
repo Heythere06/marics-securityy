@@ -10,11 +10,12 @@ const userBPassword = process.env.MARICS_TEST_USER_B_PASSWORD;
 const configured = Boolean(url && anonKey && userAEmail && userAPassword && userBEmail && userBPassword);
 
 describe.skipIf(!configured)('Supabase training isolation', () => {
-  const client = createClient(url!, anonKey!);
+  let client: ReturnType<typeof createClient>;
   let userAToken = '';
   let userBToken = '';
 
   beforeAll(async () => {
+    client = createClient(url!, anonKey!);
     const [userA, userB] = await Promise.all([
       client.auth.signInWithPassword({ email: userAEmail!, password: userAPassword! }),
       client.auth.signInWithPassword({ email: userBEmail!, password: userBPassword! }),

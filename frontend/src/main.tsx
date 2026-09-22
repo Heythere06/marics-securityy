@@ -1,16 +1,15 @@
 ﻿import { StrictMode, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session } from '@supabase/supabase-js';
-import { acceptOrganizationInvitation, createAdminModule, createInvitation, createOrganization, createOrganizationReport, getAdminOverview, getOrganizationDashboard, getOrganizations, getProfile, getTrainingModules, getTrainingScenario, getTrainingSummary, saveTrainingAnswer, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateLanguage, type AdminOverview, type TrainingModule, type TrainingScenario } from './lib/api';
+import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getTrainingModules, getTrainingScenario, getTrainingSummary, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, type AdminOverview, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario } from './lib/api';
 import { supabase } from './lib/supabase';
 import { getTranslations, type Language } from './i18n';
+import { AdminScenarioEditor } from './AdminScenarioEditor';
 import './styles.css';
 
 type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings';
 type AppRole = 'individual' | 'employee' | 'organization_admin' | 'marics_admin';
 type TrainingAnswer = 'verify' | 'act' | 'ignore';
-
-const assessmentKeys = ['urgency', 'authority', 'curiosity', 'fear', 'trust', 'scarcity', 'social_pressure', 'financial_manipulation', 'credential_theft', 'impersonation'];
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -20,22 +19,26 @@ function App() {
   const [authReady, setAuthReady] = useState(supabase === null);
   const [view, setView] = useState<View>('overview');
   const [assessmentIndex, setAssessmentIndex] = useState(0);
-  const [assessmentAnswers, setAssessmentAnswers] = useState<number[]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [onboardingScenarios, setOnboardingScenarios] = useState<OnboardingScenario[]>([]);
+  const [assessmentAnswers, setAssessmentAnswers] = useState<Array<{ scenarioSlug: string; optionKey: 'A' | 'B' | 'C' }>>([]);
+  const [selectedOptionKey, setSelectedOptionKey] = useState<'A' | 'B' | 'C' | null>(null);
+  const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [trainingAnswer, setTrainingAnswer] = useState<TrainingAnswer | null>(null);
-  const [trainingFeedback, setTrainingFeedback] = useState<string | null>(null);
+  const [trainingResult, setTrainingResult] = useState<{ isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: 'A' | 'B' | 'C' } | null>(null);
   const [trainingModules, setTrainingModules] = useState<TrainingModule[]>([]);
   const [trainingScenario, setTrainingScenario] = useState<TrainingScenario | null>(null);
   const [selectedScenarioSlug, setSelectedScenarioSlug] = useState<string | null>(null);
   const [trainingLoading, setTrainingLoading] = useState(false);
   const [trainingError, setTrainingError] = useState<string | null>(null);
-  const [riskProfile, setRiskProfile] = useState<{ focus_dimension: string; awareness_score: number } | null>(null);
+  const [riskProfile, setRiskProfile] = useState<RiskProfile | null>(null);
   const [trainingSummary, setTrainingSummary] = useState<TrainingSummary>({ attempted: 0, correct: 0, lastAttemptAt: null, modules: [], recommendation: null });
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string; isAdmin: boolean }>>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const t = getTranslations(language);
-  const assessmentQuestions = (t.assessment.questions.length === 10 ? t.assessment.questions : getTranslations('en').assessment.questions);
-  const completed = assessmentAnswers.length === assessmentQuestions.length;
+  const needsOnboarding = (role === 'individual' || role === 'employee') && !riskProfile;
+  const onboardingComplete = Boolean(riskProfile);
+  const currentAssessmentScenario = onboardingScenarios[assessmentIndex] ?? null;
 
   useEffect(() => {
     if (!supabase) return;
@@ -50,10 +53,37 @@ function App() {
     const savedLanguage = session.user.user_metadata?.preferred_language as Language | undefined;
     if (savedLanguage === 'en' || savedLanguage === 'af' || savedLanguage === 'pt') setLanguage(savedLanguage);
     setDisplayName(fallback);
-    getProfile(session.access_token).then((profile) => {
-      if (profile?.full_name) setDisplayName(profile.full_name);
-      if (profile?.role) setRole(profile.role);
-    }).catch(() => undefined);
+    const onboardingTimeout = window.setTimeout(() => {
+      setAssessmentLoading(false);
+      setAssessmentError('Your workspace took too long to respond. Check the API connection and retry.');
+    }, 15_000);
+    const loadProfileAndOnboarding = async () => {
+      try {
+        const profile = await getProfile(session.access_token);
+        if (profile?.full_name) setDisplayName(profile.full_name);
+        const nextRole = profile?.role ?? 'individual';
+        if (profile?.role) setRole(profile.role);
+        const savedRiskProfile = await getRiskProfile(session.access_token);
+        if (savedRiskProfile) {
+          setRiskProfile(savedRiskProfile);
+          return;
+        }
+        if (nextRole === 'individual' || nextRole === 'employee') {
+          setView('assessment');
+          setAssessmentLoading(true);
+          setAssessmentError(null);
+          const scenarios = await getOnboardingAssessment(session.access_token);
+          if (scenarios.length !== 10) throw new Error(`The onboarding assessment returned ${scenarios.length} scenarios; 10 are required. Apply migration 202609190011_onboarding_assessment.sql.`);
+          setOnboardingScenarios(scenarios);
+        }
+      } catch (error) {
+        setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.');
+      } finally {
+        window.clearTimeout(onboardingTimeout);
+        setAssessmentLoading(false);
+      }
+    };
+    void loadProfileAndOnboarding();
     getTrainingSummary(session.access_token).then(setTrainingSummary).catch(() => undefined);
     getOrganizations(session.access_token).then(setOrganizations).catch(() => undefined);
     getTrainingModules(session.access_token).then((availableModules) => {
@@ -67,7 +97,7 @@ function App() {
     if (!session || !scenarioSlug) return;
     setSelectedScenarioSlug(scenarioSlug);
     setTrainingAnswer(null);
-    setTrainingFeedback(null);
+    setTrainingResult(null);
     setTrainingError(null);
     setTrainingLoading(true);
     try {
@@ -80,16 +110,17 @@ function App() {
   };
 
   const submitAssessment = async () => {
-    if (selected === null) return;
-    setAssessmentAnswers([...assessmentAnswers, selected]);
-    setSelected(null);
-    if (assessmentIndex < assessmentQuestions.length - 1) {
+    if (!selectedOptionKey || !currentAssessmentScenario) return;
+    const nextAnswers = [...assessmentAnswers, { scenarioSlug: currentAssessmentScenario.slug, optionKey: selectedOptionKey }];
+    setAssessmentAnswers(nextAnswers);
+    setSelectedOptionKey(null);
+    if (assessmentIndex < onboardingScenarios.length - 1) {
       setAssessmentIndex(assessmentIndex + 1);
       return;
     }
     if (!session) return;
     try {
-      const profile = await saveAssessment(session.access_token, assessmentQuestions.map((question, index) => ({ questionKey: assessmentKeys[index], selectedOption: index === assessmentIndex ? selected : assessmentAnswers[index], riskDimension: question.dimension })));
+      const profile = await saveAssessment(session.access_token, nextAnswers);
       setRiskProfile(profile);
       setView('overview');
     } catch (error) {
@@ -97,14 +128,20 @@ function App() {
     }
   };
 
+  const navigate = (nextView: View) => {
+    if (needsOnboarding && nextView !== 'assessment') return;
+    setView(nextView);
+  };
+
   const handleTrainingAnswer = async (answer: TrainingAnswer) => {
     setTrainingAnswer(answer);
-    setTrainingFeedback(null);
+    setTrainingResult(null);
     if (!session) return;
     try {
       if (!trainingScenario) return;
       const result = await saveTrainingAnswer(session.access_token, trainingScenario.slug, answer === 'verify' ? 'B' : answer === 'act' ? 'A' : 'C');
-      setTrainingFeedback(result.feedback.en ?? Object.values(result.feedback)[0] ?? null);
+      const pick = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
+      setTrainingResult({ isCorrect: result.isCorrect, feedback: pick(result.feedback), explanation: pick(result.explanation), correctOptionKey: result.correctOptionKey });
       setTrainingSummary((current) => ({ ...current, attempted: current.attempted + 1, correct: current.correct + (result.isCorrect ? 1 : 0), lastAttemptAt: new Date().toISOString(), modules: current.modules.map((module) => module.slug === trainingScenario.module.slug ? { ...module, scenariosAttempted: module.scenariosAttempted + 1, scenariosCorrect: module.scenariosCorrect + (result.isCorrect ? 1 : 0), completed: module.completed || module.scenariosAttempted + 1 >= module.scenarioCount } : module) }));
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'We could not save your training answer.');
@@ -115,15 +152,16 @@ function App() {
   if (!session) return <PublicSite language={language} setLanguage={setLanguage} />;
 
   return <main className="workspace">
-    <Sidebar role={role} displayName={displayName} language={language} onLanguageChange={(nextLanguage) => { setLanguage(nextLanguage); if (session) updateLanguage(session.access_token, nextLanguage).catch(() => setSaveError('We could not save your language preference.')); }} view={view} setView={setView} hasOrganizations={organizations.length > 0} onSignOut={() => supabase?.auth.signOut()} />
+    <Sidebar role={role} displayName={displayName} language={language} onLanguageChange={(nextLanguage) => { setLanguage(nextLanguage); if (session) updateLanguage(session.access_token, nextLanguage).catch(() => setSaveError('We could not save your language preference.')); }} view={view} setView={navigate} onboardingLocked={needsOnboarding} hasOrganizations={organizations.length > 0} onSignOut={() => supabase?.auth.signOut()} />
     {view === 'overview' && role === 'marics_admin' && <PlatformAdminDashboard displayName={displayName} session={session} />}
-    {view === 'overview' && role === 'employee' && <EmployeeDashboard displayName={displayName} organizations={organizations} trainingSummary={trainingSummary} onAssessment={() => setView('assessment')} onTraining={() => setView('training')} />}
+    {view === 'overview' && role === 'employee' && <EmployeeDashboard displayName={displayName} organizations={organizations} riskProfile={riskProfile} trainingSummary={trainingSummary} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
     {view === 'overview' && role === 'organization_admin' && <OrganizationView session={session} organizations={organizations} setOrganizations={setOrganizations} />}
-    {view === 'overview' && role === 'individual' && <Overview displayName={displayName} completed={completed} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => setView('assessment')} onTraining={() => setView('training')} />}
-    {view === 'assessment' && (role === 'individual' || role === 'employee') && <section className="content assessment-view"><Header eyebrow={t.assessment.eyebrow} title={t.assessment.title} detail={t.assessment.body} /><div className="assessment-progress"><span>{t.common.question} {assessmentIndex + 1} {t.common.of} {assessmentQuestions.length}</span><div><i style={{ width: `${((assessmentIndex + 1) / assessmentQuestions.length) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{assessmentQuestions[assessmentIndex].dimension} {t.assessment.manipulation}</p><h2>{assessmentQuestions[assessmentIndex].prompt}</h2><div className="option-list">{assessmentQuestions[assessmentIndex].options.map((option, index) => <button key={option} className={selected === index ? 'option selected' : 'option'} onClick={() => setSelected(index)}><span>{String.fromCharCode(65 + index)}</span>{option}</button>)}</div><button className="primary action-button" disabled={selected === null} onClick={submitAssessment}>{assessmentIndex === assessmentQuestions.length - 1 ? t.assessment.finish : t.assessment.continue} <b>&#8594;</b></button></article></section>}
-    {view === 'training' && (role === 'individual' || role === 'employee') && <TrainingView language={language} modules={trainingModules} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={selectTrainingScenario} scenario={trainingScenario} loading={trainingLoading} error={trainingError} feedback={trainingFeedback} answer={trainingAnswer} onAnswer={handleTrainingAnswer} />}
+    {view === 'overview' && role === 'individual' && <Overview displayName={displayName} onboardingComplete={onboardingComplete} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
+    {role === 'marics_admin' && view !== 'overview' && <AdminSecondaryView view={view} session={session} />}
+    {view === 'assessment' && (role === 'individual' || role === 'employee') && <AssessmentView language={language} t={t} loading={assessmentLoading} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.'); setAssessmentLoading(false); }); }} />}
+    {view === 'training' && (role === 'individual' || role === 'employee') && !needsOnboarding && <TrainingView language={language} modules={trainingModules} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={selectTrainingScenario} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} onAnswer={handleTrainingAnswer} />}
     {view === 'organization' && role === 'organization_admin' && <OrganizationView session={session} organizations={organizations} setOrganizations={setOrganizations} />}
-    {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'organization' && <RoleSection role={role} view={view} />}
+    {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'organization' && role !== 'marics_admin' && <RoleSection role={role} view={view} />}
     {saveError && <div className="toast error" role="alert">{saveError}</div>}
   </main>;
 }
@@ -183,8 +221,8 @@ function formatAuthError(error: { message: string; code?: string; status?: numbe
   return error.message || 'We could not complete that request. Check your details and try again.';
 }
 
-function EmployeeDashboard({ displayName, organizations, trainingSummary, onAssessment, onTraining }: { displayName: string; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; trainingSummary: { attempted: number; correct: number; lastAttemptAt: string | null }; onAssessment: () => void; onTraining: () => void }) {
-  return <section className="content"><Header eyebrow="Employee workspace" title={`Good morning, ${displayName.split(/\s+/)[0] || 'there'}.`} detail="Your personal learning path, connected to your organization without exposing unnecessary personal information." /><div className="role-banner"><div><p className="card-kicker">ORGANIZATION MEMBERSHIP</p><h2>{organizations.map((organization) => organization.name).join(' &#183; ') || 'Invitation pending'}</h2><p>Your employer can see aggregate team progress. Your individual answers remain yours.</p></div><span className="role-pill">EMPLOYEE</span></div><div className="org-metrics employee-metrics"><article><span>YOUR ATTEMPTS</span><strong>{trainingSummary.attempted}</strong></article><article><span>YOUR CORRECT</span><strong>{trainingSummary.correct}</strong></article><article><span>ACCURACY</span><strong>{trainingSummary.attempted ? Math.round((trainingSummary.correct / trainingSummary.attempted) * 100) : 0}%</strong></article><article><span>MODULES</span><strong>0 / 12</strong></article></div><div className="role-columns"><article className="focus-card"><p className="card-kicker">RECOMMENDED NEXT</p><h2>Practice your next scenario</h2><p>Build confidence with realistic decisions and immediate explanations.</p><button className="text-button" onClick={onTraining}>Continue training <b>&#8594;</b></button></article><article className="focus-card"><p className="card-kicker">ONBOARDING</p><h2>Keep your profile current</h2><p>Complete the baseline assessment to receive recommendations matched to your risk profile.</p><button className="text-button" onClick={onAssessment}>Start assessment <b>&#8594;</b></button></article></div></section>;
+function EmployeeDashboard({ displayName, organizations, riskProfile, trainingSummary, onAssessment, onTraining }: { displayName: string; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; riskProfile: RiskProfile | null; trainingSummary: { attempted: number; correct: number; lastAttemptAt: string | null }; onAssessment: () => void; onTraining: () => void }) {
+  return <section className="content"><Header eyebrow="Employee workspace" title={`Good morning, ${displayName.split(/\s+/)[0] || 'there'}.`} detail="Your personal learning path, connected to your organization without exposing unnecessary personal information." /><div className="role-banner"><div><p className="card-kicker">ORGANIZATION MEMBERSHIP</p><h2>{organizations.map((organization) => organization.name).join(' &#183; ') || 'Invitation pending'}</h2><p>Your employer can see aggregate team progress. Your individual answers remain yours.</p></div><span className="role-pill">EMPLOYEE</span></div>{riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>AWARENESS</span><strong>{riskProfile.awareness_score}/100</strong></article><article><span>YOUR ATTEMPTS</span><strong>{trainingSummary.attempted}</strong></article></div>}<div className="role-columns"><article className="focus-card"><p className="card-kicker">RECOMMENDED NEXT</p><h2>{riskProfile ? 'Practice your next scenario' : 'Complete your baseline assessment'}</h2><p>{riskProfile ? 'Build confidence with realistic decisions and immediate explanations.' : 'Your organization dashboard stays aggregate-only until you finish onboarding.'}</p><button className="text-button" onClick={riskProfile ? onTraining : onAssessment}>{riskProfile ? 'Continue training' : 'Start assessment'} <b>&#8594;</b></button></article><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{riskProfile ? `${riskProfile.focus_dimension} needs practice` : 'Profile pending'}</h2><p>{riskProfile ? `Your strongest habit today: ${riskProfile.strongest_dimension}.` : 'Ten short scenarios map where pressure affects your decisions.'}</p><button className="text-button" onClick={onAssessment}>{riskProfile ? 'Retake assessment' : 'Begin onboarding'} <b>&#8594;</b></button></article></div></section>;
 }
 
 function PlatformAdminDashboard({ displayName, session }: { displayName: string; session: Session }) {
@@ -229,7 +267,7 @@ function NavIcon({ name }: { name: string }) {
   };
   return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] ?? paths.dashboard} /></svg>;
 }
-function Sidebar({ role, displayName, language, onLanguageChange, view, setView, hasOrganizations, onSignOut }: { role: AppRole; displayName: string; language: Language; onLanguageChange: (language: Language) => void; view: View; setView: (view: View) => void; hasOrganizations: boolean; onSignOut: () => void }) {
+function Sidebar({ role, displayName, language, onLanguageChange, view, setView, onboardingLocked, hasOrganizations, onSignOut }: { role: AppRole; displayName: string; language: Language; onLanguageChange: (language: Language) => void; view: View; setView: (view: View) => void; onboardingLocked: boolean; hasOrganizations: boolean; onSignOut: () => void }) {
   const navigation = role === 'marics_admin'
     ? [['overview', 'dashboard', 'Dashboard'], ['users', 'users', 'Users'], ['organization', 'organization', 'Organizations'], ['modules', 'modules', 'Training modules'], ['ai-content', 'ai', 'AI content'], ['certificates', 'certificates', 'Certificates'], ['reports', 'reports', 'Reports'], ['settings', 'settings', 'System settings']]
     : role === 'organization_admin'
@@ -237,11 +275,61 @@ function Sidebar({ role, displayName, language, onLanguageChange, view, setView,
       : role === 'employee'
         ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'My training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization']]
         : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']];
-  return <aside className="sidebar"><div className="brand">MARICS<span>/ SECURITY</span></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small>{roleLabel(role)}</small></div></div><nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button><span>?</span> Help centre</button></div></aside>;
+  return <aside className="sidebar"><div className="brand">MARICS<span>/ SECURITY</span></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small>{roleLabel(role)}</small></div></div>{onboardingLocked && <p className="sidebar-note">Finish your baseline assessment to unlock the rest of your workspace.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button><span>?</span> Help centre</button></div></aside>;
+}
+
+function AssessmentView({ language, t, loading, error, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; error: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void }) {
+  if (error) return <section className="content assessment-view"><Header eyebrow={t.assessment.eyebrow} title="Your assessment could not load." detail={error} /><button className="primary action-button" onClick={onRetry}>Retry assessment <b>&#8594;</b></button></section>;
+  if (loading || !scenario) return <section className="content assessment-view"><Header eyebrow={t.assessment.eyebrow} title="Loading your assessment..." detail="Preparing scenario-style onboarding questions from the training catalog." /></section>;
+  const content = scenario.content[language] ?? scenario.content.en ?? Object.values(scenario.content)[0];
+  const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
+  return <section className="content assessment-view"><Header eyebrow={t.assessment.eyebrow} title={t.assessment.title} detail={t.assessment.body} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total}</span><div><i style={{ width: `${((index + 1) / total) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button key={option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button className="primary action-button" disabled={selectedOptionKey === null} onClick={onSubmit}>{index === total - 1 ? t.assessment.finish : t.assessment.continue} <b>&#8594;</b></button></article></section>;
 }
 
 function roleLabel(role: AppRole) {
   return role === 'marics_admin' ? 'MARICS administrator' : role === 'organization_admin' ? 'Organization administrator' : role === 'employee' ? 'Employee' : 'Individual account';
+}
+
+function AdminSecondaryView({ view, session }: { view: View; session: Session }) {
+  const [query, setQuery] = useState('');
+  const [records, setRecords] = useState<unknown[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [scenarioModuleId, setScenarioModuleId] = useState('');
+  const [scenarioSlug, setScenarioSlug] = useState('');
+  const [scenarioTitle, setScenarioTitle] = useState('');
+  const [scenarioText, setScenarioText] = useState('');
+  const [riskDimension, setRiskDimension] = useState('');
+  const [optionText, setOptionText] = useState(['', '', '']);
+  const [correctOption, setCorrectOption] = useState('0');
+  const [feedback, setFeedback] = useState('');
+  const load = async () => {
+    setMessage(null);
+    try {
+      if (view === 'users') setRecords(await searchAdminUsers(session.access_token, query));
+      else if (view === 'organization') setRecords(await searchAdminOrganizations(session.access_token, query));
+      else if (view === 'modules') setRecords((await getAdminTrainingCatalog(session.access_token)).modules);
+      else if (view === 'reports') setRecords((await getAdminAnalytics(session.access_token)).categoryWeakness);
+      else if (view === 'settings') setRecords(await getAdminAuditLog(session.access_token));
+      else setRecords([]);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Admin data could not be loaded.'); }
+  };
+  useEffect(() => { void load(); }, [view, session.access_token]);
+  const updateRole = async (userId: string, role: string) => { try { await updateAdminUserRole(session.access_token, userId, role); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Role could not be updated.'); } };
+  const toggleSuspension = async (user: { id: string; suspended: boolean }) => { try { await updateAdminUserSuspension(session.access_token, user.id, !user.suspended); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Account state could not be updated.'); } };
+  if (String(view) === 'modules') return <section className="content"><Header eyebrow="MARICS administration / Training catalog" title="Training catalog" detail="Create, localize, edit, and publish the scenarios learners will practice." />{message && <div className="auth-message" role="alert">{message}</div>}<AdminScenarioEditor accessToken={session.access_token} modules={records as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>} onMessage={setMessage} /></section>;
+    const createScenario = async (event: FormEvent) => {
+      event.preventDefault();
+      try {
+        await createAdminScenario(session.access_token, { moduleId: scenarioModuleId, slug: scenarioSlug, content: { en: { title: scenarioTitle, scenario: scenarioText } }, riskDimensions: [riskDimension], options: optionText.map((content, index) => ({ optionKey: String.fromCharCode(65 + index) as 'A' | 'B' | 'C', content: { en: content }, isCorrect: String(index) === correctOption, feedback: { en: { choice: feedback, explanation: feedback } } })) });
+        setScenarioSlug(''); setScenarioTitle(''); setScenarioText(''); setRiskDimension(''); setOptionText(['', '', '']); setFeedback('');
+        setMessage('Scenario created. Add more scenarios, then publish the module.');
+        await load();
+      } catch (error) { setMessage(error instanceof Error ? error.message : 'Scenario could not be created.'); }
+    };
+  const labels: Record<string, string> = { users: 'Users', organization: 'Organizations', modules: 'Training catalog', reports: 'Platform analytics', settings: 'Audit log', 'ai-content': 'AI content', certificates: 'Certificates' };
+  return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>).map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios · {module.published ? 'published' : 'draft'}{module.archived ? ' · archived' : ''}</span></div>)}</div></article>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ category: string; weakPercent: number; weakCount: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% weak ({item.weakCount})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}{(view === 'ai-content' || view === 'certificates') && <article className="role-empty"><p className="card-kicker">PHASED CONTROL</p><h2>{view === 'ai-content' ? 'AI content moderation' : 'Certificate management'}</h2><p>This area remains intentionally staged until the corresponding product phase exists.</p></article>}</section>;
+  const moduleRecords = records as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>;
+  return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <><article className="admin-panel"><p className="card-kicker">CREATE SCENARIO</p><form className="admin-form" onSubmit={createScenario}><select value={scenarioModuleId} onChange={(event) => setScenarioModuleId(event.target.value)} required><option value="">Choose a module</option>{moduleRecords.map((module) => <option key={module.id} value={module.id}>{module.slug}</option>)}</select><input value={scenarioSlug} onChange={(event) => setScenarioSlug(event.target.value)} placeholder="scenario-slug" required /><input value={scenarioTitle} onChange={(event) => setScenarioTitle(event.target.value)} placeholder="Scenario title" required /><input value={riskDimension} onChange={(event) => setRiskDimension(event.target.value)} placeholder="Risk dimension" required /><textarea value={scenarioText} onChange={(event) => setScenarioText(event.target.value)} placeholder="What situation should the learner decide?" required /><label>Option A<input value={optionText[0]} onChange={(event) => setOptionText([event.target.value, optionText[1], optionText[2]])} required /></label><label>Option B<input value={optionText[1]} onChange={(event) => setOptionText([optionText[0], event.target.value, optionText[2]])} required /></label><label>Option C<input value={optionText[2]} onChange={(event) => setOptionText([optionText[0], optionText[1], event.target.value])} required /></label><select value={correctOption} onChange={(event) => setCorrectOption(event.target.value)}><option value="0">Option A is correct</option><option value="1">Option B is correct</option><option value="2">Option C is correct</option></select><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Feedback shown after the answer" required /><button className="primary">Create scenario <b>&#8594;</b></button></form></article><article className="admin-panel"><div className="admin-list">{moduleRecords.map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios {module.archived ? '· archived' : ''}</span><button className="text-button" onClick={() => void setAdminModulePublished(session.access_token, module.id, !module.published).then(load).catch((error) => setMessage(error instanceof Error ? error.message : 'Module could not be updated.'))}>{module.published ? 'Unpublish' : 'Publish'}</button></div>)}</div></article></>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ category: string; weakCount: number; assessedUsers: number; weakPercent: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% focus area ({item.weakCount}/{item.assessedUsers})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}</section>;
 }
 
 function RoleSection({ role, view }: { role: AppRole; view: View }) {
@@ -260,7 +348,7 @@ function initials(name: string) {
 
 function OrganizationView({ session, organizations, setOrganizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; setOrganizations: (organizations: Array<{ id: string; name: string; isAdmin: boolean }>) => void }) {
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(organizations[0]?.id ?? '');
-  const [dashboard, setDashboard] = useState<{ organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; attempted: number; correct: number }> } | null>(null);
+  const [dashboard, setDashboard] = useState<{ organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; attempted: number; correct: number }>; teamRisk?: { employeeCount: number; assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number } } | null>(null);
   const [organizationName, setOrganizationName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -285,7 +373,17 @@ function OrganizationView({ session, organizations, setOrganizations }: { sessio
   };
   const report = async () => {
     if (!selectedOrganizationId) return;
-    try { const result = await createOrganizationReport(session.access_token, selectedOrganizationId); const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'marics-organization-report.json'; link.click(); URL.revokeObjectURL(url); } catch (error) { setMessage(error instanceof Error ? error.message : 'Report could not be generated.'); }
+    try {
+      const [result, csv] = await Promise.all([createOrganizationReport(session.access_token, selectedOrganizationId), createOrganizationCsvReport(session.access_token, selectedOrganizationId)]);
+      const jsonUrl = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }));
+      const jsonLink = document.createElement('a'); jsonLink.href = jsonUrl; jsonLink.download = 'marics-organization-report.json'; jsonLink.click(); URL.revokeObjectURL(jsonUrl);
+      const csvUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      const csvLink = document.createElement('a'); csvLink.href = csvUrl; csvLink.download = 'marics-organization-report.csv'; csvLink.click(); URL.revokeObjectURL(csvUrl);
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Report could not be generated.'); }
+  };
+  const csvReport = async () => {
+    if (!selectedOrganizationId) return;
+    try { const csv = await createOrganizationCsvReport(session.access_token, selectedOrganizationId); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'marics-organization-report.csv'; link.click(); URL.revokeObjectURL(url); } catch (error) { setMessage(error instanceof Error ? error.message : 'CSV report could not be generated.'); }
   };
   const accept = async (event: FormEvent) => {
     event.preventDefault(); setMessage(null);
@@ -301,24 +399,24 @@ function Header({ eyebrow, title, detail }: { eyebrow: string; title: string; de
 
 type TrainingSummary = { attempted: number; correct: number; lastAttemptAt: string | null; modules: Array<{ id: string; slug: string; title: Record<string, string>; scenarioCount: number; scenariosAttempted: number; scenariosCorrect: number; completed: boolean }>; recommendation: { slug: string; title: Record<string, string>; reason: 'focus-area' | 'next-unfinished' } | null };
 
-function Overview({ displayName, completed, riskProfile, trainingSummary, trainingModules, onAssessment, onTraining }: { displayName: string; completed: boolean; riskProfile: { focus_dimension: string; awareness_score: number } | null; trainingSummary: TrainingSummary; trainingModules: TrainingModule[]; onAssessment: () => void; onTraining: () => void }) {
+function Overview({ displayName, onboardingComplete, riskProfile, trainingSummary, trainingModules, onAssessment, onTraining }: { displayName: string; onboardingComplete: boolean; riskProfile: RiskProfile | null; trainingSummary: TrainingSummary; trainingModules: TrainingModule[]; onAssessment: () => void; onTraining: () => void }) {
   const firstName = displayName.split(/\s+/)[0] || 'there';
   const progressBySlug = new Map(trainingSummary.modules.map((module) => [module.slug, module]));
   const modules = trainingModules.map((module, index) => {
     const progress = progressBySlug.get(module.slug);
     return { title: module.title.en ?? module.slug, label: String(index + 1).padStart(2, '0'), meta: `${progress?.scenariosAttempted ?? 0} / ${module.scenarioCount} scenarios`, tone: ['rust', 'blue', 'green'][index % 3] };
   });
-  return <section className="content"><Header eyebrow="Saturday, 19 September 2026" title={`Good morning, ${firstName}.`} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." /><div className="overview-grid"><article className="awareness-card"><div><p className="card-kicker">OVERALL AWARENESS</p><div className="score-line"><strong>{completed ? 'Building' : 'Not assessed'}</strong><span>{completed ? 'Profile ready' : 'Start with 3 scenarios'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '&#8212;'}</span><small>{completed ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{completed ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Complete your baseline'}</h2><p>{completed ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'A short assessment reveals where realistic pressure could affect your decisions.'}</p><button onClick={completed ? onTraining : onAssessment}>{completed ? 'Open training' : 'Start assessment'} <b>&#8594;</b></button></article></div><div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{completed ? `${riskProfile?.focus_dimension ?? 'Your focus area'} needs your attention` : 'Your focus areas appear here'}</h2><p>{completed ? 'Your assessment points to this manipulation pattern as a useful place to practice next.' : 'Complete your assessment to see the manipulation patterns that deserve more practice, with context behind every recommendation.'}</p><button className="text-button" onClick={onAssessment}>{completed ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
+  return <section className="content"><Header eyebrow="Saturday, 19 September 2026" title={`Good morning, ${firstName}.`} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." /><div className="overview-grid"><article className="awareness-card"><div><p className="card-kicker">OVERALL AWARENESS</p><div className="score-line"><strong>{onboardingComplete ? 'Profile ready' : 'Not assessed'}</strong><span>{onboardingComplete && riskProfile ? `Strongest: ${riskProfile.strongest_dimension}` : 'Complete onboarding first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '&#8212;'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Complete your baseline'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten scenario-style questions map your strongest habits and focus areas.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start assessment'} <b>&#8594;</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAK SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'weak').length}</strong></article><article><span>STRONG SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'strong').length}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
 }
 
-function TrainingView({ language, modules, selectedScenarioSlug, onScenarioSelect, scenario, loading, error, feedback, answer, onAnswer }: { language: Language; modules: TrainingModule[]; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; feedback: string | null; answer: TrainingAnswer | null; onAnswer: (answer: TrainingAnswer) => void }) {
+function TrainingView({ language, modules, selectedScenarioSlug, onScenarioSelect, scenario, loading, error, result, answer, onAnswer }: { language: Language; modules: TrainingModule[]; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: 'A' | 'B' | 'C' } | null; answer: TrainingAnswer | null; onAnswer: (answer: TrainingAnswer) => void }) {
   if (loading) return <section className="content"><Header eyebrow="Training" title="Loading your next scenario." detail="Preparing a database-backed training situation." /></section>;
   if (error) return <section className="content"><Header eyebrow="Training" title="Training is unavailable." detail={error} /></section>;
-  if (!scenario) return <section className="content"><Header eyebrow="Training" title="No training is published yet." detail="Your administrator will make scenarios available here." /></section>;
+  if (!scenario) return <section className="content"><Header eyebrow="Training" title={modules.length ? 'Published modules have no scenarios yet.' : 'No training is published yet.'} detail={modules.length ? 'Your administrator has published a module, but scenario content still needs to be added.' : 'Your administrator will make scenarios available here.'} /></section>;
   const content = scenario.content[language] ?? scenario.content.en ?? Object.values(scenario.content)[0];
   const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
   const optionText = (key: 'A' | 'B' | 'C') => localized(scenario.options.find((option) => option.option_key === key)?.content ?? {});
-  return <section className="content"><Header eyebrow={`Training / ${scenario.module.title[language] ?? scenario.module.title.en ?? scenario.module.slug}`} title={content?.title ?? 'Verify before you act.'} detail={content?.scenario ?? 'A realistic request. Choose the response you would make.'} /><article className="scenario-card"><label className="scenario-picker">Choose a scenario<select value={selectedScenarioSlug ?? ''} onChange={(event) => onScenarioSelect(event.target.value)}>{modules.flatMap((module) => module.scenarioSlugs.map((slug) => <option key={slug} value={slug}>{module.title[language] ?? module.title.en ?? module.slug} / {slug}</option>))}</select></label><div className="scenario-meta">{scenario.riskDimensions.map((dimension) => <span key={dimension}>{dimension}</span>)}</div><div className="message"><div className="message-top"><div className="avatar manager">{content?.sender?.slice(0, 2).toUpperCase() ?? 'MR'}</div><div><strong>{content?.sender ?? 'MARICS scenario'}</strong><small>{content?.channel ?? 'Training scenario'}</small></div></div><p>{content?.message ?? content?.scenario}</p></div><h2>What should you do?</h2><div className="training-options">{(['A', 'B', 'C'] as const).map((key) => <button key={key} className={answer === (key === 'B' ? 'verify' : key === 'A' ? 'act' : 'ignore') ? 'selected' : ''} onClick={() => onAnswer(key === 'B' ? 'verify' : key === 'A' ? 'act' : 'ignore')}><b>{key}</b>{optionText(key)}</button>)}</div>{answer && <div className={`feedback ${answer === 'verify' ? 'good' : 'bad'}`}><strong>Response recorded</strong><p>{feedback ?? 'Your answer was saved. Review the scenario and continue practicing verification before acting.'}</p><span>Manipulation technique: {scenario.riskDimensions.join(' + ')}</span></div>}</article></section>;
+  return <section className="content"><Header eyebrow={`Training / ${scenario.module.title[language] ?? scenario.module.title.en ?? scenario.module.slug}`} title={content?.title ?? 'Verify before you act.'} detail={content?.scenario ?? 'A realistic request. Choose the response you would make.'} /><article className="scenario-card"><label className="scenario-picker">Choose a scenario<select value={selectedScenarioSlug ?? ''} onChange={(event) => onScenarioSelect(event.target.value)}>{modules.flatMap((module) => module.scenarioSlugs.map((slug) => <option key={slug} value={slug}>{module.title[language] ?? module.title.en ?? module.slug} / {slug}</option>))}</select></label><div className="scenario-meta">{scenario.riskDimensions.map((dimension) => <span key={dimension}>{dimension}</span>)}</div><div className="message"><div className="message-top"><div className="avatar manager">{content?.sender?.slice(0, 2).toUpperCase() ?? 'MR'}</div><div><strong>{content?.sender ?? 'MARICS scenario'}</strong><small>{content?.channel ?? 'Training scenario'}</small></div></div><p>{content?.message ?? content?.scenario}</p></div><h2>What should you do?</h2><div className="training-options">{(['A', 'B', 'C'] as const).map((key) => <button key={key} className={answer === (key === 'B' ? 'verify' : key === 'A' ? 'act' : 'ignore') ? 'selected' : ''} onClick={() => onAnswer(key === 'B' ? 'verify' : key === 'A' ? 'act' : 'ignore')}><b>{key}</b>{optionText(key)}</button>)}</div>{result && <div className={`feedback ${result.isCorrect ? 'good' : 'bad'}`}><strong>{result.isCorrect ? 'Correct — and here is why it matters' : 'Not quite — learn the safer response'}</strong><p>{result.feedback}</p><p className="feedback-explanation"><em>Why this is the risk:</em> {result.explanation}</p>{!result.isCorrect && <p className="feedback-correct">The strongest response is option {result.correctOptionKey}.</p>}<span>Manipulation signals: {scenario.riskDimensions.join(' + ')}</span></div>}</article></section>;
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
