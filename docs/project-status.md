@@ -32,6 +32,7 @@ frontend/
   src/i18n/                   English, Afrikaans, Portuguese translations
   src/lib/api.ts              typed frontend API clients
   src/lib/supabase.ts         browser Supabase client
+  src/AdminScenarioEditor.tsx localized admin scenario list and editor
   public/assets/              landing-page media and logo assets
 
 backend/
@@ -54,6 +55,7 @@ supabase/migrations/
   012                           audit log and admin RPCs
   013                           organization team risk and CSV reports
   014                           additive schema/policy repair for interrupted manual setup
+  015                           published training visibility and admin scenario authoring
 
 docs/
   project-status.md            this complete product and engineering status
@@ -159,6 +161,7 @@ Implemented admin UI:
 - Users panel with search, role update, suspend/reactivate.
 - Organizations panel with search.
 - Training catalog panel.
+- Scenario list and localized create/edit form with per-option correctness, choice feedback, and explanation fields.
 - Platform analytics panel.
 - Audit-log panel.
 - AI moderation and certificate screens remain explicit staged placeholders.
@@ -174,6 +177,39 @@ Implemented admin UI:
 - Error responses avoid exposing stack traces in production.
 - Deterministic user-scoping and organization-isolation tests exist.
 - Optional Supabase integration test harness is available but requires a dedicated test project and two test users.
+
+## Verified Bugs, Errors, and Fixes
+
+The following issues were reproduced against the live Supabase project and verified again through the browser on 2026-09-22.
+
+### Admin overview and module errors
+
+- Symptom: `/api/admin/overview` returned `403 Forbidden`.
+- Root cause: the API correctly checks `profiles.role = 'marics_admin'`; changing Auth user metadata alone does not grant platform-admin access.
+- Fix/status: the role requirement is documented and remains intentionally enforced. Admin access must be assigned through the protected database profile role.
+
+- Symptom: module creation returned `400 Bad Request` for invalid payloads without identifying the field.
+- Fix/status: Zod validation remains enforced, and the API now includes the invalid field paths in development responses.
+
+### Empty published training
+
+- Symptom: the admin catalog showed `Sql ingections` as published while a normal user saw `No training is published yet.`
+- Root cause: the module had zero scenarios/options, and normal-user Supabase reads returned `200 []` because training tables had no effective end-user read policy in the deployed project.
+- Fix: published training reads use the server-side content client, migration `202609190015_admin_scenarios.sql` adds published-content read policies, and the UI distinguishes “no modules published” from “published modules have no scenarios yet.”
+- Verification: an authored `sql-injection-login` scenario was created in the live `Sql ingections` module. A normal user saw `0 / 1 scenarios`, opened the scenario, selected an answer, and received structured feedback.
+
+### Onboarding loading and submission
+
+- Symptom: onboarding appeared to remain on `Loading your assessment...`, and completing the assessment produced `500 ASSESSMENT_SCENARIO_INVALID`.
+- Root cause: the onboarding GET returned `200` with all 10 seeded questions, but assessment submission looked up seeded scenarios through the normal user client. Remote RLS returned no scenario rows, so the server rejected valid answers.
+- Fix: seeded assessment content is read through the server-side content client while assessment answers and risk-profile writes remain user-scoped. Profile and assessment requests also have bounded timeouts, so the UI enters an actionable error state instead of spinning forever.
+- Verification: a normal user completed all 10 questions, reached the dashboard, and received a persisted risk profile.
+
+### Remote migration caveat
+
+- The repository contains migrations through `202609190015_admin_scenarios.sql`.
+- The live project was queried directly for schema/data behavior. The Supabase migration-history table was not exposed through the available REST credentials, so exact remote migration history could not be independently listed from this workspace.
+- Apply all migrations in order, especially `202609190015_admin_scenarios.sql`, before relying on the new database policies and admin RPCs.
 
 ## Partially Complete or Needs Fixing
 
@@ -194,14 +230,13 @@ The admin control-plane UI is intentionally minimal. Backend capabilities exceed
 
 - user detail drawer/page with organization, risk profile, and training history
 - organization detail page with employee and aggregate risk view
-- module scenario and option CRUD, including explanation fields
 - language completeness counts per module/scenario
 - settings editor for AI caps, rate limits, and feature flags
 - audit-log filtering and detail display
 
 ### Database deployment verification
 
-The repository contains migrations through `202609190014_schema_repair.sql`, but the local environment does not have a usable Supabase CLI status check. The remote project must be verified separately after applying migrations. The repair migration is additive and is intended for partially applied/manual setups; it does not replace the ordered migration chain.
+The repository contains migrations through `202609190015_admin_scenarios.sql`, but the local environment does not have a usable Supabase CLI migration-history check. The remote project must be verified separately after applying migrations. The repair migration is additive and is intended for partially applied/manual setups; it does not replace the ordered migration chain.
 
 ### Integration coverage
 
@@ -215,7 +250,6 @@ The default suite uses deterministic service tests and unauthenticated route tes
 
 ## Not Implemented Yet
 
-- Full scenario/module authoring CRUD for admins.
 - Email delivery for organization invitations.
 - Pagination for large user, organization, employee, and audit lists.
 - Production deployment and domain configuration.
@@ -271,20 +305,20 @@ Apply all migrations in filename order:
 202609190012_audit_log_and_admin.sql
 202609190013_org_team_risk.sql
 202609190014_schema_repair.sql
+202609190015_admin_scenarios.sql
 ```
 
 Do not paste isolated migration excerpts into a partially initialized database. Use the Supabase migration runner or apply the complete files in order.
 
 ## Recommended Next Steps
 
-1. Start both services and test signup, onboarding, training, admin, and organization flows manually.
-2. Confirm the remote Supabase migration state and inspect the browser/API logs during signup and admin overview loading.
-3. Add the organization team-risk visual panel.
-4. Expand admin detail pages and training-content CRUD.
-5. Run authenticated integration tests against a dedicated Supabase test project.
-6. Finalize privacy rules for organization visibility of employee-level risk.
-7. Only after these are stable, begin Phase 3 AI user-facing generation and cost controls.
-8. Defer certification work until the readiness rule is agreed and Phase 5 begins.
+1. Apply and independently verify migration `202609190015_admin_scenarios.sql` in each deployed Supabase project.
+2. Add the organization team-risk visual panel.
+3. Expand admin user and organization detail pages, language completeness reporting, and settings editing.
+4. Run authenticated integration tests against a dedicated Supabase test project.
+5. Finalize privacy rules for organization visibility of employee-level risk.
+6. Only after these are stable, begin Phase 3 AI user-facing generation and cost controls.
+7. Defer certification work until the readiness rule is agreed and Phase 5 begins.
 
 ## Potential Future Features
 
