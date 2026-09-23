@@ -72,13 +72,31 @@ export async function createOrganization(accessToken: string, name: string) {
 export async function getOrganizationDashboard(accessToken: string, organizationId: string) {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Organization dashboard could not be loaded');
-  return (await response.json()).dashboard as { organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; attempted: number; correct: number }> };
+  return (await response.json()).dashboard as { organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; email?: string | null; joinedAt: string; attempted: number; correct: number; lastActivityAt: string; modulesCompleted: number; modulesTotal: number; riskSummary: string }>; teamRisk?: { employeeCount: number; assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number } };
 }
 
 export async function createInvitation(accessToken: string, organizationId: string, email: string) {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/invitations`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be created');
   return (await response.json()).invitation as { email: string; token: string; expiresAt: string };
+}
+
+export async function validateInvitation(accessToken: string, token: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/invitations/validate?token=${encodeURIComponent(token)}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be validated');
+  return (await response.json()).invitation as { organizationId: string; organizationName: string; email: string; expiresAt: string; acceptedAt: string | null; isExpired: boolean; isUsed: boolean };
+}
+
+export async function updateOrganization(accessToken: string, organizationId: string, input: { name?: string; defaultEmployeeLanguage?: 'en' | 'af' | 'pt' }) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}`, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Organization settings could not be saved');
+  return (await response.json()).organization as { id: string; name: string; defaultEmployeeLanguage: 'en' | 'af' | 'pt' };
+}
+
+export async function removeOrganizationMember(accessToken: string, organizationId: string, userId: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/members/${userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Employee could not be removed');
+  return (await response.json()).member as { organizationId: string; userId: string; removed: boolean };
 }
 
 export async function createOrganizationReport(accessToken: string, organizationId: string) {

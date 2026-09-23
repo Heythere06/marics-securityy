@@ -7,7 +7,7 @@ import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
 import { generateScenario, scenarioGenerationSchema } from './modules/ai.js';
-import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, invitationSchema, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema } from './modules/organizations.js';
+import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
   adminArchiveSchema,
   adminModuleSchema,
@@ -57,9 +57,34 @@ async function requireUser(request: { headers: Record<string, string | string[] 
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 1_000_000 });
+  const productionOrigins = (process.env.FRONTEND_URL ?? process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const normalizeOriginPattern = (pattern: string) => pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+  const isAllowedOrigin = (origin: string | undefined, patterns: string[]) => {
+    if (!origin) return true;
+    return patterns.some((pattern) => {
+      if (pattern === origin) return true;
+      const regex = new RegExp(`^${normalizeOriginPattern(pattern)}$`, 'i');
+      return regex.test(origin);
+    });
+  };
 
   app.register(helmet);
-  app.register(cors, { origin: process.env.NODE_ENV === 'production' ? (process.env.FRONTEND_URL ?? 'http://localhost:5173') : true });
+  app.register(cors, {
+    origin: process.env.NODE_ENV === 'production'
+      ? (origin, callback) => {
+          if (!origin || isAllowedOrigin(origin, productionOrigins)) {
+            callback(null, true);
+            return;
+          }
+          callback(new Error('Origin not allowed by CORS policy'), false);
+        }
+      : true,
+    credentials: true,
+  });
   app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
   app.get('/health', async () => ({ status: 'ok', service: 'marics-api' }));
@@ -402,6 +427,22 @@ export function buildApp() {
     }
   });
 
+  app.patch('/api/organizations/:organizationId', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const organizationId = (request.params as { organizationId: string }).organizationId;
+      const input = organizationSettingsSchema.parse(request.body ?? {});
+      const organization = await updateOrganization(createAuthenticatedClient(auth.accessToken!), organizationId, input);
+      return reply.send({ organization });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update this organization.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ORGANIZATION_SETTINGS', message: 'Provide a valid organization name or language.' });
+      if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to update this organization.' });
+      request.log.error(error, 'Organization update failed');
+      return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not update this organization.' });
+    }
+  });
+
   app.get('/api/organizations', async (request, reply) => {
     try {
       const auth = await requireUser(request);
@@ -424,8 +465,28 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to invite an employee.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_INVITATION', message: 'Enter a valid employee email address.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to invite employees to this organization.' });
+      if (error instanceof Error && error.message === 'INVITATION_EMAIL_NOT_CONFIGURED') return reply.code(503).send({ error: 'INVITATION_EMAIL_NOT_CONFIGURED', message: 'Invitation email delivery is not configured on the server.' });
+      if (error instanceof Error && error.message === 'INVITATION_EMAIL_FAILED') {
+        const providerError = error.cause as { status?: number; name?: string; message?: string } | undefined;
+        request.log.error({ provider: providerError }, 'Invitation email provider rejected delivery');
+        return reply.code(502).send({ error: 'INVITATION_EMAIL_FAILED', message: providerError?.message ?? 'The invitation was created, but the email provider rejected delivery.', provider: providerError?.name ?? 'unknown_error', providerStatus: providerError?.status });
+      }
       request.log.error(error, 'Invitation creation failed');
       return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not create the invitation.' });
+    }
+  });
+
+  app.get('/api/organizations/invitations/validate', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const token = z.string().regex(/^[a-f0-9]{64}$/i).parse((request.query as { token?: string })?.token);
+      const invitation = await getInvitationByToken(createAuthenticatedClient(auth.accessToken!), token);
+      return reply.send({ invitation });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to review this invitation.' });
+      if (error instanceof z.ZodError || error instanceof Error && error.message.includes('INVITATION_INVALID')) return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation is invalid, expired, or already used.' });
+      request.log.error(error, 'Invitation validation failed');
+      return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not validate this invitation.' });
     }
   });
 
@@ -440,6 +501,22 @@ export function buildApp() {
       if (error instanceof z.ZodError || (error instanceof Error && error.message.includes('INVITATION_INVALID'))) return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation is invalid or has expired.' });
       request.log.error(error, 'Invitation acceptance failed');
       return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not accept the invitation.' });
+    }
+  });
+
+  app.delete('/api/organizations/:organizationId/members/:userId', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const organizationId = z.string().uuid().parse((request.params as { organizationId: string }).organizationId);
+      const userId = z.string().uuid().parse((request.params as { userId: string }).userId);
+      const result = await removeOrganizationMember(createAuthenticatedClient(auth.accessToken!), organizationId, userId);
+      return reply.send({ member: result });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organization employees.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MEMBER', message: 'Choose a valid employee.' });
+      if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to manage this organization.' });
+      request.log.error(error, 'Member removal failed');
+      return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not remove this employee.' });
     }
   });
 

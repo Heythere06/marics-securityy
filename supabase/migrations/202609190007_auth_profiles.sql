@@ -3,14 +3,19 @@ create policy profiles_self_update on public.profiles for update using (id = aut
 
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  normalized_account_type text;
 begin
-  insert into public.profiles (id, full_name, country_code, preferred_language, account_type)
+  normalized_account_type := coalesce(nullif(new.raw_user_meta_data ->> 'account_type', ''), 'individual');
+
+  insert into public.profiles (id, full_name, country_code, preferred_language, role, account_type)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1)),
     nullif(new.raw_user_meta_data ->> 'country_code', ''),
     coalesce(nullif(new.raw_user_meta_data ->> 'preferred_language', ''), 'en'),
-    coalesce(nullif(new.raw_user_meta_data ->> 'account_type', ''), 'individual')
+    case when normalized_account_type = 'organization' then 'organization_admin'::public.app_role else 'individual'::public.app_role end,
+    normalized_account_type
   );
   return new;
 end;

@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: marics-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        value: https://your-vercel-app.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: https://your-vercel-app.vercel.app,http://localhost:5173,http://127.0.0.1:5173
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AI_PROVIDER_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        value: claude
+      - key: AI_MODEL
+        value: claude-3-5-haiku-latest
+      - key: AI_MAX_OUTPUT_TOKENS
+        value: 1200
