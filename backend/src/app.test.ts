@@ -59,6 +59,17 @@ describe('health endpoint', () => {
   });
 
   it.each([
+    ['GET', '/api/users/me'],
+    ['GET', '/api/users/me/risk-profile'],
+    ['GET', '/api/users/me/training-progress'],
+  ])('protects personal security endpoint %s %s', async (method, url) => {
+    const response = await app.inject({ method: method as 'GET', url });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('AUTH_REQUIRED');
+  });
+
+  it.each([
     ['GET', '/api/assessment/onboarding', undefined],
     ['GET', '/api/training/modules', undefined],
     ['GET', '/api/training/scenarios/whatsapp-gift-cards', undefined],

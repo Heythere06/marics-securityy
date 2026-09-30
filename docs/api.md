@@ -8,7 +8,7 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 
 ## Endpoint groups
 
-* `/api/users/me`
+* `GET /api/users/me` returns the authenticated user's profile; `PATCH /api/users/me` updates the display name and/or preferred language.
 * `/api/organizations` and `/api/organizations/:organizationId/invitations`
 * `/api/modules` and `/api/scenarios/:scenarioId/answer`
 * `/api/assessments` and `/api/users/me/risk-profile`
@@ -17,6 +17,7 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `POST /api/scenarios/:scenarioSlug/answer` records a verified training attempt and updates the user's module progress.
 * `GET /api/training/modules` returns published modules and their available scenario slugs for the authenticated user.
 * `GET /api/training/scenarios/:scenarioSlug` returns a published scenario, localized content, options, risk dimensions, and stored feedback.
+* `GET /api/users/me/risk-profile` returns the authenticated user's awareness score, strongest and focus dimensions, category scores, and last-updated time.
 * `GET /api/users/me/training-progress` returns the authenticated user's aggregate attempts plus persisted per-module attempts, correct answers, scenario counts, and completion state.
 * `GET /api/certificates` returns the authenticated user's certificates and awards any eligible completed-module certificates. `GET /api/certificates/verify/:verificationId` publicly validates a certificate without exposing account data beyond recipient and module.
 * `POST /api/ai/generate-scenario` asks Claude for one structured scenario and caches it by user, module, language, and prompt. It is authenticated and limited to five requests per hour; the MARICS admin scenario editor uses it to populate a reviewable draft.
@@ -26,7 +27,6 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `POST /api/organizations/invitations/accept` accepts an invitation for the authenticated user.
 * `GET /api/organizations/:organizationId/dashboard` returns scoped aggregate employee progress and risk data.
 * `POST /api/organizations/:organizationId/reports` generates a scoped organization report; pass `{ "format": "csv" }` for a downloadable aggregate CSV with no employee names or individual answers.
-* `PATCH /api/users/me` updates the authenticated user's display name and/or preferred language.
 * `GET /api/admin/overview` returns protected platform counts and recent users, organizations, modules, and AI content for `marics_admin` users.
 * `POST /api/admin/modules` and `PATCH /api/admin/modules/:moduleId` create and publish configurable training modules.
 * `PATCH /api/admin/settings` updates the supported platform languages for `marics_admin` users.
