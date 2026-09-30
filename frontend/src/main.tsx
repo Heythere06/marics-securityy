@@ -1,13 +1,14 @@
 ﻿import { StrictMode, useEffect, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session } from '@supabase/supabase-js';
-import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getTrainingModules, getTrainingScenario, getTrainingSummary, removeOrganizationMember, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, validateInvitation, type AdminOverview, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario } from './lib/api';
+import { askSecurityCoach } from './lib/api';
+import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, removeOrganizationMember, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, validateInvitation, verifyCertificate, type AdminOverview, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
 import { supabase } from './lib/supabase';
 import { getTranslations, type Language } from './i18n';
 import { AdminScenarioEditor } from './AdminScenarioEditor';
 import './styles.css';
 
-type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings';
+type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'security-coach' | 'reports' | 'settings';
 type AppRole = 'individual' | 'employee' | 'organization_admin' | 'marics_admin';
 type TrainingAnswer = 'verify' | 'act' | 'ignore';
 
@@ -24,6 +25,7 @@ function App() {
   const [selectedOptionKey, setSelectedOptionKey] = useState<'A' | 'B' | 'C' | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [retakingAssessment, setRetakingAssessment] = useState(false);
   const [trainingAnswer, setTrainingAnswer] = useState<TrainingAnswer | null>(null);
   const [trainingResult, setTrainingResult] = useState<{ isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: 'A' | 'B' | 'C' } | null>(null);
   const [trainingModules, setTrainingModules] = useState<TrainingModule[]>([]);
@@ -36,6 +38,7 @@ function App() {
   const [organizations, setOrganizations] = useState<Array<{ id: string; name: string; isAdmin: boolean }>>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const t = getTranslations(language);
+  const verificationId = window.location.pathname.match(/^\/verify\/([0-9a-f-]{36})\/?$/i)?.[1] ?? null;
   const needsOnboarding = (role === 'individual' || role === 'employee') && !riskProfile;
   const onboardingComplete = Boolean(riskProfile);
   const currentAssessmentScenario = onboardingScenarios[assessmentIndex] ?? null;
@@ -48,7 +51,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || verificationId) return;
     const fallback = session.user.user_metadata?.full_name ?? session.user.email?.split('@')[0] ?? 'there';
     const savedLanguage = session.user.user_metadata?.preferred_language as Language | undefined;
     if (savedLanguage === 'en' || savedLanguage === 'af' || savedLanguage === 'pt') setLanguage(savedLanguage);
@@ -66,6 +69,7 @@ function App() {
         }
         const profile = await getProfile(session.access_token);
         if (profile?.full_name) setDisplayName(profile.full_name);
+        if (profile?.preferred_language === 'en' || profile?.preferred_language === 'af' || profile?.preferred_language === 'pt') setLanguage(profile.preferred_language);
         const nextRole = profile?.role ?? 'individual';
         if (profile?.role) setRole(profile.role);
         const savedRiskProfile = await getRiskProfile(session.access_token);
@@ -96,7 +100,7 @@ function App() {
       const firstScenarioSlug = availableModules[0]?.scenarioSlugs[0] ?? null;
       if (firstScenarioSlug) void selectTrainingScenario(firstScenarioSlug);
     }).catch((error) => setTrainingError(error instanceof Error ? error.message : 'Training modules could not be loaded.'));
-  }, [session]);
+  }, [session, verificationId]);
 
   const selectTrainingScenario = async (scenarioSlug: string) => {
     if (!session || !scenarioSlug) return;
@@ -127,14 +131,35 @@ function App() {
     try {
       const profile = await saveAssessment(session.access_token, nextAnswers);
       setRiskProfile(profile);
-      setView('overview');
+      setRetakingAssessment(false);
+      setView(retakingAssessment ? 'assessment' : 'overview');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'We could not save your assessment.');
     }
   };
 
+  const beginAssessment = async () => {
+    if (!session) return;
+    setAssessmentIndex(0);
+    setAssessmentAnswers([]);
+    setSelectedOptionKey(null);
+    setAssessmentLoading(true);
+    setAssessmentError(null);
+    setRetakingAssessment(true);
+    setView('assessment');
+    try {
+      const scenarios = await getOnboardingAssessment(session.access_token);
+      if (scenarios.length !== 10) throw new Error(`The onboarding assessment returned ${scenarios.length} scenarios; 10 are required.`);
+      setOnboardingScenarios(scenarios);
+    } catch (error) {
+      setAssessmentError(error instanceof Error ? error.message : 'Your assessment could not be loaded.');
+    } finally {
+      setAssessmentLoading(false);
+    }
+  };
+
   const navigate = (nextView: View) => {
-    if (needsOnboarding && nextView !== 'assessment') return;
+    if (needsOnboarding && nextView !== 'assessment' && nextView !== 'security-coach') return;
     setView(nextView);
   };
 
@@ -147,13 +172,14 @@ function App() {
       const result = await saveTrainingAnswer(session.access_token, trainingScenario.slug, answer === 'verify' ? 'B' : answer === 'act' ? 'A' : 'C');
       const pick = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
       setTrainingResult({ isCorrect: result.isCorrect, feedback: pick(result.feedback), explanation: pick(result.explanation), correctOptionKey: result.correctOptionKey });
-      setTrainingSummary((current) => ({ ...current, attempted: current.attempted + 1, correct: current.correct + (result.isCorrect ? 1 : 0), lastAttemptAt: new Date().toISOString(), modules: current.modules.map((module) => module.slug === trainingScenario.module.slug ? { ...module, scenariosAttempted: module.scenariosAttempted + 1, scenariosCorrect: module.scenariosCorrect + (result.isCorrect ? 1 : 0), completed: module.completed || module.scenariosAttempted + 1 >= module.scenarioCount } : module) }));
+      setTrainingSummary(await getTrainingSummary(session.access_token));
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'We could not save your training answer.');
     }
   };
 
   if (!authReady) return <div className="loading-screen">Loading your secure workspace...</div>;
+  if (verificationId) return <CertificateVerificationPage verificationId={verificationId} />;
   if (!session) return <PublicSite language={language} setLanguage={setLanguage} />;
 
   return <main className="workspace">
@@ -163,12 +189,16 @@ function App() {
     {view === 'overview' && role === 'organization_admin' && <OrganizationDashboard session={session} organizations={organizations} />}
     {view === 'overview' && role === 'individual' && <Overview displayName={displayName} onboardingComplete={onboardingComplete} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
     {role === 'marics_admin' && view !== 'overview' && <AdminSecondaryView view={view} session={session} />}
-    {view === 'assessment' && (role === 'individual' || role === 'employee') && <AssessmentView language={language} t={t} loading={assessmentLoading} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.'); setAssessmentLoading(false); }); }} />}
+    {view === 'security-coach' && role !== 'marics_admin' && <SecurityCoach accessToken={session.access_token} language={language} />}
+    {view === 'assessment' && (role === 'individual' || role === 'employee') && (riskProfile && !retakingAssessment ? <RiskProfileView profile={riskProfile} onRetake={() => void beginAssessment()} /> : <AssessmentView language={language} t={t} loading={assessmentLoading} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.'); setAssessmentLoading(false); }); }} />)}
     {view === 'training' && (role === 'individual' || role === 'employee') && !needsOnboarding && <TrainingView language={language} modules={trainingModules} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={selectTrainingScenario} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} onAnswer={handleTrainingAnswer} />}
-    {view === 'organization' && role === 'organization_admin' && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} />}
-    {view === 'reports' && role === 'organization_admin' && <OrganizationReports session={session} organizations={organizations} />}
-    {view === 'settings' && role === 'organization_admin' && <OrganizationSettings session={session} organizations={organizations} setOrganizations={setOrganizations} />}
-    {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'organization' && view !== 'reports' && view !== 'settings' && role !== 'marics_admin' && <RoleSection role={role} view={view} />}
+  {view === 'organization' && role === 'organization_admin' && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} />}
+  {view === 'reports' && role === 'organization_admin' && <OrganizationReports session={session} organizations={organizations} />}
+  {view === 'settings' && role === 'organization_admin' && <OrganizationSettings session={session} organizations={organizations} setOrganizations={setOrganizations} />}
+    {view === 'progress' && (role === 'individual' || role === 'employee') && <ProgressView summary={trainingSummary} onTraining={() => navigate('training')} />}
+    {view === 'certificates' && role !== 'marics_admin' && <CertificatesView accessToken={session.access_token} displayName={displayName} language={language} />}
+  {view === 'settings' && (role === 'individual' || role === 'employee') && <SettingsView email={session.user.email ?? ''} displayName={displayName} language={language} accessToken={session.access_token} onSaved={(name, nextLanguage) => { setDisplayName(name); setLanguage(nextLanguage); }} />}
+  {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'organization' && view !== 'reports' && view !== 'security-coach' && view !== 'progress' && view !== 'certificates' && view !== 'settings' && role !== 'marics_admin' && <RoleSection role={role} view={view} />}
     {saveError && <div className="toast error" role="alert">{saveError}</div>}
   </main>;
 }
@@ -283,11 +313,11 @@ function Sidebar({ role, displayName, language, onLanguageChange, view, setView,
   const navigation = role === 'marics_admin'
     ? [['overview', 'dashboard', 'Dashboard'], ['users', 'users', 'Users'], ['organization', 'organization', 'Organizations'], ['modules', 'modules', 'Training modules'], ['reports', 'reports', 'Reports'], ['settings', 'settings', 'System settings']]
     : role === 'organization_admin'
-      ? [['overview', 'dashboard', 'Dashboard'], ['organization', 'organization', 'Organization'], ['reports', 'reports', 'Reports'], ['settings', 'settings', 'Settings']]
+      ? [['overview', 'dashboard', 'Dashboard'], ['organization', 'organization', 'Organization'], ['security-coach', 'ai', 'Security coach'], ['reports', 'reports', 'Reports'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']]
       : role === 'employee'
-        ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'My training'], ['progress', 'progress', 'Progress'], ['organization', 'organization', 'Organization']]
-        : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['settings', 'settings', 'Settings']];
-  return <aside className="sidebar"><div className="brand">MARICS<span>/ SECURITY</span></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small>{roleLabel(role)}</small></div></div>{onboardingLocked && <p className="sidebar-note">Finish your baseline assessment to unlock the rest of your workspace.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button><span>?</span> Help centre</button></div></aside>;
+        ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'My training'], ['security-coach', 'ai', 'Security coach'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization'], ['settings', 'settings', 'Settings']]
+        : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['security-coach', 'ai', 'Security coach'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']];
+  return <aside className="sidebar"><div className="brand">MARICS<span>/ SECURITY</span></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small>{roleLabel(role)}</small></div></div>{onboardingLocked && <p className="sidebar-note">Finish your baseline assessment to unlock the rest of your workspace.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment' && target !== 'security-coach'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button><span>?</span> Help centre</button></div></aside>;
 }
 
 function AssessmentView({ language, t, loading, error, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; error: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void }) {
@@ -296,6 +326,112 @@ function AssessmentView({ language, t, loading, error, scenario, index, total, s
   const content = scenario.content[language] ?? scenario.content.en ?? Object.values(scenario.content)[0];
   const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
   return <section className="content assessment-view"><Header eyebrow={t.assessment.eyebrow} title={t.assessment.title} detail={t.assessment.body} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total}</span><div><i style={{ width: `${((index + 1) / total) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button key={option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button className="primary action-button" disabled={selectedOptionKey === null} onClick={onSubmit}>{index === total - 1 ? t.assessment.finish : t.assessment.continue} <b>&#8594;</b></button></article></section>;
+}
+
+function RiskProfileView({ profile, onRetake }: { profile: RiskProfile; onRetake: () => void }) {
+  const dimensions = Object.entries(profile.category_scores ?? {});
+  return <section className="content">
+    <Header eyebrow="PERSONAL SECURITY / BASELINE" title="My risk profile" detail="Your results highlight habits to keep and areas where a little practice can reduce risk." />
+    <div className="risk-profile-summary">
+      <article className="risk-score"><p className="card-kicker">AWARENESS SCORE</p><strong>{profile.awareness_score}<span>/100</span></strong><p>Based on your latest assessment.</p></article>
+      <article className="risk-highlights"><div><span>STRONGEST AREA</span><strong>{profile.strongest_dimension}</strong></div><div><span>FOCUS AREA</span><strong>{profile.focus_dimension}</strong></div><p>Scores describe assessment responses, not a guarantee of safety. Use your focus area to choose what to practice next.</p></article>
+    </div>
+    <article className="risk-dimensions"><div className="section-heading"><div><p className="card-kicker">ASSESSMENT SIGNALS</p><h2>Your habits by topic</h2></div><span>{dimensions.filter(([, score]) => score === 'strong').length} strong · {dimensions.filter(([, score]) => score === 'weak').length} to practice</span></div>
+      {dimensions.length ? <div className="risk-dimension-list">{dimensions.map(([dimension, score]) => <div className="risk-dimension-row" key={dimension}><strong>{dimension.replace(/_/g, ' ')}</strong><span className={score}>{score === 'strong' ? 'Strong habit' : 'Practice this'}</span></div>)}</div> : <p>Your profile has no topic breakdown yet. Retake the assessment to refresh it.</p>}
+      <p className="risk-updated">Last assessed {profile.updated_at ? new Date(profile.updated_at).toLocaleDateString() : 'recently'}</p>
+    </article>
+    <button className="primary action-button" onClick={onRetake}>Retake baseline assessment <b>&#8594;</b></button>
+  </section>;
+}
+
+function ProgressView({ summary, onTraining }: { summary: TrainingSummary; onTraining: () => void }) {
+  const available = summary.modules.reduce((total, module) => total + module.scenarioCount, 0);
+  const completed = summary.modules.filter((module) => module.completed).length;
+  const accuracy = summary.attempted ? Math.round((summary.correct / summary.attempted) * 100) : 0;
+  return <section className="content">
+    <Header eyebrow="PERSONAL SECURITY / LEARNING" title="Progress" detail="Track practice across published training modules and see where to continue." />
+    <div className="progress-metrics"><article><span>SCENARIOS TRIED</span><strong>{summary.attempted}</strong></article><article><span>ACCURACY</span><strong>{summary.attempted ? `${accuracy}%` : '—'}</strong></article><article><span>MODULES COMPLETE</span><strong>{completed} / {summary.modules.length}</strong></article><article><span>SCENARIOS AVAILABLE</span><strong>{available}</strong></article></div>
+    {summary.lastAttemptAt && <p className="progress-last-attempt">Last practice: {new Date(summary.lastAttemptAt).toLocaleString()}</p>}
+    <article className="progress-modules"><div className="section-heading"><div><p className="card-kicker">MODULE BREAKDOWN</p><h2>Practice over time</h2></div><button className="text-button" type="button" onClick={onTraining}>Continue training <b>&#8594;</b></button></div>
+      {summary.modules.length ? <div className="progress-module-list">{summary.modules.map((module) => { const percent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosAttempted / module.scenarioCount) * 100)) : 0; return <div className="progress-module" key={module.id}><div className="progress-module-heading"><strong>{module.title.en ?? module.slug}</strong><span>{module.completed ? 'Complete' : `${module.scenariosAttempted} of ${module.scenarioCount} practiced`}</span></div><div className="progress-track"><i style={{ width: `${percent}%` }} /></div><small>{module.scenariosCorrect} correct responses</small></div>; })}</div> : <p>No published training modules are available yet.</p>}
+    </article>
+  </section>;
+}
+
+function SettingsView({ email, displayName, language, accessToken, onSaved }: { email: string; displayName: string; language: Language; accessToken: string; onSaved: (name: string, language: Language) => void }) {
+  const [fullName, setFullName] = useState(displayName);
+  const [preferredLanguage, setPreferredLanguage] = useState<Language>(language);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true); setMessage(null); setError(null);
+    try {
+      const saved = await updateProfileSettings(accessToken, { fullName, preferredLanguage });
+      setFullName(saved.full_name);
+      setPreferredLanguage(saved.preferred_language);
+      onSaved(saved.full_name, saved.preferred_language);
+      setMessage('Profile settings saved.');
+    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Profile settings could not be saved.'); } finally { setBusy(false); }
+  };
+
+  const changePassword = async (event: FormEvent) => {
+    event.preventDefault(); setMessage(null); setError(null);
+    if (password.length < 8) { setError('Use at least 8 characters for your new password.'); return; }
+    if (password !== confirmPassword) { setError('The password confirmation does not match.'); return; }
+    if (!supabase) { setError('Password updates are not configured.'); return; }
+    setBusy(true);
+    try {
+      const { error: passwordError } = await supabase.auth.updateUser({ password });
+      if (passwordError) throw passwordError;
+      setPassword(''); setConfirmPassword(''); setMessage('Password updated.');
+    } catch (passwordError) { setError(passwordError instanceof Error ? passwordError.message : 'Password could not be updated.'); } finally { setBusy(false); }
+  };
+
+  return <section className="content">
+    <Header eyebrow="ACCOUNT / PREFERENCES" title="Settings" detail="Manage your personal details and sign-in security." />
+    {message && <p className="settings-message" role="status">{message}</p>}{error && <p className="settings-error" role="alert">{error}</p>}
+    <div className="settings-grid">
+      <article className="settings-panel"><p className="card-kicker">PROFILE</p><form className="settings-form" onSubmit={saveProfile}><label>Email address<input value={email} readOnly /></label><label>Display name<input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={1} maxLength={160} /></label><label>Preferred language<select value={preferredLanguage} onChange={(event) => setPreferredLanguage(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button className="primary" disabled={busy}>{busy ? 'Saving...' : 'Save profile'} <b>&#8594;</b></button></form></article>
+      <article className="settings-panel"><p className="card-kicker">SIGN-IN SECURITY</p><form className="settings-form" onSubmit={changePassword}><label>New password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label><label>Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label><p>Your password is managed by Supabase Auth and is never stored by the MARICS API.</p><button className="primary" disabled={busy}>{busy ? 'Updating...' : 'Update password'} <b>&#8594;</b></button></form></article>
+    </div>
+  </section>;
+}
+
+function CertificatesView({ accessToken, displayName, language }: { accessToken: string; displayName: string; language: Language }) {
+  const [certificates, setCertificates] = useState<UserCertificate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => {
+    setLoading(true); setError(null);
+    getUserCertificates(accessToken).then(setCertificates).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Certificates could not be loaded.')).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, [accessToken]);
+
+  return <section className="content">
+    <Header eyebrow="PERSONAL SECURITY / ACHIEVEMENTS" title="Certificates" detail="Your verified records of completed security awareness training." />
+    {loading && <p className="page-state">Loading certificates...</p>}
+    {error && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" onClick={load}>Retry</button></div>}
+    {!loading && !error && certificates.length === 0 && <article className="certificate-empty"><p className="card-kicker">NEXT MILESTONE</p><h2>Your first certificate is earned by practice.</h2><p>Complete every distinct scenario in a published training module. Your certificate will appear here automatically.</p></article>}
+    {!loading && certificates.length > 0 && <div className="certificate-list">{certificates.map((certificate) => <article className="certificate-card" key={certificate.id}><div className="certificate-mark">M</div><p className="card-kicker">MARICS / CERTIFICATE OF COMPLETION</p><h2>{certificate.module?.title[language] ?? certificate.module?.title.en ?? certificate.module?.slug ?? 'Security awareness training'}</h2><p className="certificate-recipient">Awarded to <strong>{displayName}</strong></p><div className="certificate-details"><span>Issued {new Date(certificate.issued_at).toLocaleDateString()}</span><span>Verification ID {certificate.verification_id}</span></div><a className="text-button" href={`/verify/${certificate.verification_id}`} target="_blank" rel="noreferrer">View printable certificate <b>&#8599;</b></a></article>)}</div>}
+  </section>;
+}
+
+function CertificateVerificationPage({ verificationId }: { verificationId: string }) {
+  const [certificate, setCertificate] = useState<VerifiedCertificate | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    verifyCertificate(verificationId).then(setCertificate).catch((verifyError) => setError(verifyError instanceof Error ? verifyError.message : 'Certificate verification failed.')).finally(() => setLoading(false));
+  }, [verificationId]);
+  if (loading) return <main className="certificate-verification"><p>Checking certificate...</p></main>;
+  if (error || !certificate) return <main className="certificate-verification"><article className="certificate-paper"><p className="card-kicker">MARICS / VERIFICATION</p><h1>Certificate not verified</h1><p>{error ?? 'No certificate matches this verification ID.'}</p><a href="/">Return to MARICS</a></article></main>;
+  const moduleTitle = certificate.module?.title.en ?? certificate.module?.slug ?? 'Security awareness training';
+  return <main className="certificate-verification"><article className="certificate-paper"><div className="certificate-mark">M</div><p className="card-kicker">MARICS / VERIFIED RECORD</p><h1>Certificate of completion</h1><p>This confirms that</p><strong className="verified-recipient">{certificate.recipient}</strong><p>completed the security awareness module</p><h2>{moduleTitle}</h2><p className="verified-date">Issued {new Date(certificate.issuedAt).toLocaleDateString()}</p><p className="verified-id">Verification ID: {certificate.verificationId}</p><button className="primary action-button no-print" onClick={() => window.print()}>Print certificate <b>&#8595;</b></button></article></main>;
 }
 
 function roleLabel(role: AppRole) {
@@ -344,8 +480,54 @@ function AdminSecondaryView({ view, session }: { view: View; session: Session })
   return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <><article className="admin-panel"><p className="card-kicker">CREATE SCENARIO</p><form className="admin-form" onSubmit={createScenario}><select value={scenarioModuleId} onChange={(event) => setScenarioModuleId(event.target.value)} required><option value="">Choose a module</option>{moduleRecords.map((module) => <option key={module.id} value={module.id}>{module.slug}</option>)}</select><input value={scenarioSlug} onChange={(event) => setScenarioSlug(event.target.value)} placeholder="scenario-slug" required /><input value={scenarioTitle} onChange={(event) => setScenarioTitle(event.target.value)} placeholder="Scenario title" required /><input value={riskDimension} onChange={(event) => setRiskDimension(event.target.value)} placeholder="Risk dimension" required /><textarea value={scenarioText} onChange={(event) => setScenarioText(event.target.value)} placeholder="What situation should the learner decide?" required /><label>Option A<input value={optionText[0]} onChange={(event) => setOptionText([event.target.value, optionText[1], optionText[2]])} required /></label><label>Option B<input value={optionText[1]} onChange={(event) => setOptionText([optionText[0], event.target.value, optionText[2]])} required /></label><label>Option C<input value={optionText[2]} onChange={(event) => setOptionText([optionText[0], optionText[1], event.target.value])} required /></label><select value={correctOption} onChange={(event) => setCorrectOption(event.target.value)}><option value="0">Option A is correct</option><option value="1">Option B is correct</option><option value="2">Option C is correct</option></select><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Feedback shown after the answer" required /><button className="primary">Create scenario <b>&#8594;</b></button></form></article><article className="admin-panel"><div className="admin-list">{moduleRecords.map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios {module.archived ? '· archived' : ''}</span><button className="text-button" onClick={() => void setAdminModulePublished(session.access_token, module.id, !module.published).then(load).catch((error) => setMessage(error instanceof Error ? error.message : 'Module could not be updated.'))}>{module.published ? 'Unpublish' : 'Publish'}</button></div>)}</div></article></>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ category: string; weakCount: number; assessedUsers: number; weakPercent: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% focus area ({item.weakCount}/{item.assessedUsers})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}</section>;
 }
 
+function SecurityCoach({ accessToken, language }: { accessToken: string; language: Language }) {
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const suggestions = ['How can I spot a fake delivery text?', 'What should I do if I clicked a suspicious link?', 'How do I make my accounts harder to break into?'];
+
+  const send = async (prompt: string) => {
+    const content = prompt.trim();
+    if (!content || busy) return;
+    const nextMessages = [...messages, { role: 'user' as const, content }].slice(-10);
+    setMessages(nextMessages);
+    setQuestion('');
+    setError(null);
+    setBusy(true);
+    try {
+      const answer = await askSecurityCoach(accessToken, { language, messages: nextMessages });
+      setMessages((current) => [...current, { role: 'assistant' as const, content: answer }].slice(-12));
+    } catch (sendError) {
+      setMessages(messages);
+      setQuestion(content);
+      setError(sendError instanceof Error ? sendError.message : 'The security coach could not answer right now.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <section className="content security-coach-view">
+    <Header eyebrow="PERSONAL SECURITY / ASK MARICS" title="Security Coach" detail="Get clear, practical help spotting scams, securing accounts, and responding to suspicious activity." />
+    <div className="security-coach">
+      <div className="security-coach-toolbar"><span>PRIVATE CHAT · NOT SAVED</span><button className="text-button" type="button" disabled={!messages.length || busy} onClick={() => { setMessages([]); setError(null); }}>Clear chat</button></div>
+      <div className="security-chat-log" role="log" aria-live="polite">
+        {!messages.length && <div className="security-coach-welcome"><p className="card-kicker">MARICS SECURITY COACH</p><h2>What would you like to make safer?</h2><p>Ask a question in your own words. Do not include passwords, one-time codes, recovery phrases, or payment details.</p><div className="security-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} disabled={busy} onClick={() => void send(suggestion)}>{suggestion}</button>)}</div></div>}
+        {messages.map((message, index) => <article className={`security-chat-message ${message.role}`} key={`${index}-${message.role}`}><span>{message.role === 'user' ? 'You' : 'MARICS Security Coach'}</span><p>{message.content}</p></article>)}
+        {busy && <article className="security-chat-message assistant"><span>MARICS Security Coach</span><p>Preparing practical guidance...</p></article>}
+      </div>
+      {error && <p className="security-chat-error" role="alert">{error}</p>}
+      <form className="security-chat-form" onSubmit={(event) => { event.preventDefault(); void send(question); }}>
+        <label htmlFor="security-question">Your question</label>
+        <textarea id="security-question" value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={1200} rows={3} placeholder="For example: Someone called saying my bank account is locked. What should I do?" />
+        <div><span>Never share passwords or verification codes.</span><button className="primary" disabled={busy || !question.trim()}> {busy ? 'Thinking...' : 'Ask'} <b>&#8594;</b></button></div>
+      </form>
+    </div>
+  </section>;
+}
+
 function RoleSection({ role, view }: { role: AppRole; view: View }) {
-  const labels: Record<View, string> = { overview: 'Dashboard', assessment: 'Risk profile', training: 'Training', organization: 'Organization', certificates: 'Certificates', progress: 'Progress', users: 'Users', modules: 'Training modules', 'ai-content': 'AI content', reports: 'Reports', settings: 'Settings' };
+  const labels: Record<View, string> = { overview: 'Dashboard', assessment: 'Risk profile', training: 'Training', organization: 'Organization', certificates: 'Certificates', progress: 'Progress', users: 'Users', modules: 'Training modules', 'ai-content': 'AI content', 'security-coach': 'Security Coach', reports: 'Reports', settings: 'Settings' };
   const descriptions = role === 'marics_admin'
     ? 'Platform-level management stays separate from personal training. This area will expose audited controls and database-backed records.'
     : role === 'organization_admin'

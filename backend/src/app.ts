@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
-import { generateScenario, scenarioGenerationSchema } from './modules/ai.js';
+import { askSecurityCoach, generateScenario, scenarioGenerationSchema, securityCoachSchema } from './modules/ai.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
   adminArchiveSchema,
@@ -43,6 +43,7 @@ import {
   updateAdminTrainingModule,
 } from './modules/admin.js';
 import { getOrganizationReportCsv } from './modules/organizations.js';
+import { ensureUserCertificates, listUserCertificates, verifyCertificate } from './modules/certificates.js';
 
 type AuthenticatedRequest = { userId?: string; accessToken?: string };
 
@@ -570,6 +571,22 @@ export function buildApp() {
     }
   });
 
+  app.post('/api/ai/ask', { config: { rateLimit: { max: 15, timeWindow: '1 hour' } } }, async (request, reply) => {
+    try {
+      await requireUser(request);
+      const input = securityCoachSchema.parse(request.body);
+      const answer = await askSecurityCoach(input);
+      return reply.send({ answer });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to ask the security coach.' });
+      if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The security coach is not configured yet.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION', message: 'Send a question and up to nine recent chat messages.' });
+      if (error instanceof Error && error.message === 'AI_INVALID_OUTPUT') return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The security coach could not form a response. Please try again.' });
+      request.log.error(error, 'Security coach request failed');
+      return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The security coach is unavailable right now. Please try again later.' });
+    }
+  });
+
   app.get('/api/assessment/onboarding', async (request, reply) => {
     try {
       const auth = await requireUser(request);
@@ -627,13 +644,21 @@ export function buildApp() {
   app.patch('/api/users/me', async (request, reply) => {
     try {
       const auth = await requireUser(request);
-      const input = z.object({ preferredLanguage: z.enum(['en', 'af', 'pt']) }).parse(request.body);
-      const { data, error } = await createAuthenticatedClient(auth.accessToken!).from('profiles').update({ preferred_language: input.preferredLanguage, updated_at: new Date().toISOString() }).eq('id', auth.userId).select('preferred_language').single();
+      const input = z.object({
+        fullName: z.string().trim().min(1).max(160).optional(),
+        preferredLanguage: z.enum(['en', 'af', 'pt']).optional(),
+      }).refine((value) => value.fullName !== undefined || value.preferredLanguage !== undefined).parse(request.body);
+      const updates = {
+        ...(input.fullName !== undefined ? { full_name: input.fullName } : {}),
+        ...(input.preferredLanguage !== undefined ? { preferred_language: input.preferredLanguage } : {}),
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await createAuthenticatedClient(auth.accessToken!).from('profiles').update(updates).eq('id', auth.userId).select('full_name, preferred_language').single();
       if (error) throw error;
       return reply.send({ profile: data });
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update your settings.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_LANGUAGE', message: 'Choose a supported language.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_PROFILE', message: 'Enter a valid name and choose a supported language.' });
       request.log.error(error, 'Profile update failed');
       return reply.code(500).send({ error: 'PROFILE_UNAVAILABLE', message: 'We could not update your settings.' });
     }
@@ -664,6 +689,32 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view training progress.' });
       request.log.error(error, 'Training progress lookup failed');
       return reply.code(500).send({ error: 'TRAINING_PROGRESS_UNAVAILABLE', message: 'We could not load your training progress.' });
+    }
+  });
+
+  app.get('/api/certificates', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await ensureUserCertificates(client, auth.userId!);
+      const certificates = await listUserCertificates(client, auth.userId!);
+      return reply.send({ certificates });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your certificates.' });
+      request.log.error(error, 'Certificate listing failed');
+      return reply.code(500).send({ error: 'CERTIFICATES_UNAVAILABLE', message: 'We could not load your certificates.' });
+    }
+  });
+
+  app.get('/api/certificates/verify/:verificationId', async (request, reply) => {
+    try {
+      const verificationId = z.string().uuid().parse((request.params as { verificationId: string }).verificationId);
+      const certificate = await verifyCertificate(verificationId);
+      return certificate ? reply.send({ certificate }) : reply.code(404).send({ error: 'CERTIFICATE_NOT_FOUND', message: 'No valid certificate matches this verification ID.' });
+    } catch (error) {
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_VERIFICATION_ID', message: 'Enter a valid certificate verification ID.' });
+      request.log.error(error, 'Certificate verification failed');
+      return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Certificate verification is temporarily unavailable.' });
     }
   });
 
