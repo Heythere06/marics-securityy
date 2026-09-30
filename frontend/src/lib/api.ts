@@ -122,6 +122,31 @@ export async function updateLanguage(accessToken: string, preferredLanguage: 'en
   if (!response.ok) throw new Error((await response.json()).message ?? 'Language preference could not be saved');
 }
 
+export async function updateProfileSettings(accessToken: string, input: { fullName: string; preferredLanguage: 'en' | 'af' | 'pt' }) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/users/me`, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const payload = await response.json().catch(() => ({})) as { profile?: { full_name: string; preferred_language: 'en' | 'af' | 'pt' }; message?: string };
+  if (!response.ok || !payload.profile) throw new Error(payload.message ?? 'Account settings could not be saved');
+  return payload.profile;
+}
+
+export type UserCertificate = { id: string; verification_id: string; module_id: string | null; issued_at: string; module: { slug: string; title: Record<string, string> } | null };
+
+export async function getUserCertificates(accessToken: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certificates`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const payload = await response.json().catch(() => ({})) as { certificates?: UserCertificate[]; message?: string };
+  if (!response.ok || !payload.certificates) throw new Error(payload.message ?? 'Certificates could not be loaded');
+  return payload.certificates;
+}
+
+export type VerifiedCertificate = { verificationId: string; issuedAt: string; recipient: string; module: { slug: string; title: Record<string, string> } | null };
+
+export async function verifyCertificate(verificationId: string) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certificates/verify/${encodeURIComponent(verificationId)}`);
+  const payload = await response.json().catch(() => ({})) as { certificate?: VerifiedCertificate; message?: string };
+  if (!response.ok || !payload.certificate) throw new Error(payload.message ?? 'Certificate could not be verified');
+  return payload.certificate;
+}
+
 export type AdminOverview = { counts: { users: number; organizations: number; modules: number; publishedModules: number; generatedContent: number; certificates: number }; languages: string[]; users: Array<{ id: string; name: string; role: string; language: string; createdAt: string }>; organizations: Array<{ id: string; name: string; createdAt: string }>; modules: Array<{ id: string; slug: string; title: Record<string, string>; published: boolean }>; aiContent: Array<{ id: string; moduleSlug: string; language: string; provider: string; model: string; createdAt: string }> };
 
 export async function getAdminOverview(accessToken: string) {
@@ -145,6 +170,22 @@ export async function createAdminScenario(accessToken: string, input: { moduleId
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/admin/scenarios`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Scenario could not be created');
   return (await response.json()).scenario;
+}
+
+export type GeneratedScenario = { title: string; scenario: string; options: Array<{ key: 'A' | 'B' | 'C'; text: string }>; correctOption: 'A' | 'B' | 'C'; explanation: string; manipulationTechnique: string; attackerObjective: string; correctResponse: string };
+
+export async function generateScenario(accessToken: string, input: { moduleSlug: string; language: 'en' | 'af' | 'pt'; context: string }) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/generate-scenario`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const payload = await response.json().catch(() => ({})) as { scenario?: GeneratedScenario; message?: string };
+  if (!response.ok || !payload.scenario) throw new Error(payload.message ?? 'AI scenario could not be generated');
+  return payload.scenario;
+}
+
+export async function askSecurityCoach(accessToken: string, input: { language: 'en' | 'af' | 'pt'; messages: Array<{ role: 'user' | 'assistant'; content: string }> }) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/ask`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const payload = await response.json().catch(() => ({})) as { answer?: string; message?: string };
+  if (!response.ok || !payload.answer) throw new Error(payload.message ?? 'The security coach could not answer right now');
+  return payload.answer;
 }
 
 export type AdminScenario = { id: string; moduleId: string; slug: string; content: Record<string, { title: string; scenario: string }>; riskDimensions: string[]; options: Array<{ id: string; optionKey: 'A' | 'B' | 'C'; content: Record<string, string>; isCorrect: boolean; feedback: Record<string, { choice: string; explanation: string }> }> };
