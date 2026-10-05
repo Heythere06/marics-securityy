@@ -3,7 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { createServiceClient } from '../lib/supabase.js';
 import { awardModuleCertificate, hasAttemptedEveryScenario } from './certificates.js';
 
-export const trainingAnswerSchema = z.object({ optionKey: z.enum(['A', 'B', 'C']) });
+export const trainingAnswerSchema = z.object({ optionKey: z.enum(['A', 'B', 'C', 'D']) });
 
 type LocalizedText = Record<string, string>;
 type FeedbackLeaf = string | { choice?: string; explanation?: string };
@@ -31,7 +31,7 @@ export function splitOptionFeedback(feedback: Record<string, FeedbackLeaf>): { c
 export async function listPublishedModules(client: SupabaseClient) {
   const { data, error } = await publicContentClient(client)
     .from('training_modules')
-    .select('id, slug, title, description, is_published, scenarios(id, slug)')
+    .select('id, slug, title, description, learning_material, is_published, scenarios(id, slug)')
     .eq('is_published', true)
     .eq('is_assessment', false)
     .order('created_at', { ascending: true });
@@ -41,6 +41,7 @@ export async function listPublishedModules(client: SupabaseClient) {
     slug: module.slug,
     title: module.title,
     description: module.description,
+    learningMaterial: module.learning_material,
     scenarioCount: Array.isArray(module.scenarios) ? module.scenarios.length : 0,
     scenarioSlugs: Array.isArray(module.scenarios) ? module.scenarios.map((scenario) => scenario.slug).filter((slug): slug is string => Boolean(slug)) : [],
   }));
@@ -74,6 +75,10 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
   if (!selected || !correct) throw new Error('SCENARIO_OPTIONS_INVALID');
   const selectedFeedback = splitOptionFeedback(selected.feedback as Record<string, FeedbackLeaf>);
   const correctFeedback = splitOptionFeedback(correct.feedback as Record<string, FeedbackLeaf>);
+  const { data: previousAttempts, error: previousAttemptsError } = await client.from('training_attempts').select('is_correct').eq('user_id', user.id).eq('scenario_id', scenario.id);
+  if (previousAttemptsError) throw previousAttemptsError;
+  const wasAttempted = (previousAttempts ?? []).length > 0;
+  const wasCorrect = (previousAttempts ?? []).some((attempt) => attempt.is_correct);
   const { error: attemptError } = await client.from('training_attempts').insert({ user_id: user.id, scenario_id: scenario.id, selected_option_id: selected.id, is_correct: selected.is_correct });
   if (attemptError) throw attemptError;
   const { data: moduleScenarios, error: moduleScenariosError } = await publicContentClient(client).from('scenarios').select('id').eq('module_id', scenario.module_id);
@@ -85,14 +90,14 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
   const { data: currentProgress, error: currentProgressError } = await client.from('training_progress').select('scenarios_attempted, scenarios_correct, completed_at').eq('user_id', user.id).eq('module_id', scenario.module_id).maybeSingle();
   if (currentProgressError) throw currentProgressError;
   const completedAt = currentProgress?.completed_at ?? (moduleCompleted ? new Date().toISOString() : null);
-  const { data: progress, error: progressError } = await client.from('training_progress').upsert({ user_id: user.id, module_id: scenario.module_id, scenarios_attempted: (currentProgress?.scenarios_attempted ?? 0) + 1, scenarios_correct: (currentProgress?.scenarios_correct ?? 0) + (selected.is_correct ? 1 : 0), completed_at: completedAt, updated_at: new Date().toISOString() }, { onConflict: 'user_id,module_id' }).select('scenarios_attempted, scenarios_correct, completed_at, updated_at').single();
+  const { data: progress, error: progressError } = await client.from('training_progress').upsert({ user_id: user.id, module_id: scenario.module_id, scenarios_attempted: (currentProgress?.scenarios_attempted ?? 0) + (wasAttempted ? 0 : 1), scenarios_correct: (currentProgress?.scenarios_correct ?? 0) + (!wasCorrect && selected.is_correct ? 1 : 0), completed_at: completedAt, updated_at: new Date().toISOString() }, { onConflict: 'user_id,module_id' }).select('scenarios_attempted, scenarios_correct, completed_at, updated_at').single();
   if (progressError) throw progressError;
   if (moduleCompleted) await awardModuleCertificate(client, user.id, scenario.module_id);
   return {
     isCorrect: selected.is_correct,
     feedback: selectedFeedback.choice,
     explanation: correctFeedback.explanation,
-    correctOptionKey: correct.option_key as 'A' | 'B' | 'C',
+    correctOptionKey: correct.option_key as 'A' | 'B' | 'C' | 'D',
     progress,
   };
 }

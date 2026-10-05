@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
-import { askSecurityCoach, generateScenario, scenarioGenerationSchema, securityCoachSchema } from './modules/ai.js';
+import { explainScenarioWhy, generateScenario, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
   adminArchiveSchema,
@@ -134,7 +134,7 @@ export function buildApp() {
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Enter a scenario, exactly three options, and one correct answer.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Enter a scenario, exactly four options, and one correct answer.' });
       request.log.error(error, 'Admin scenario creation failed');
       return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not create the scenario.' });
     }
@@ -571,19 +571,19 @@ export function buildApp() {
     }
   });
 
-  app.post('/api/ai/ask', { config: { rateLimit: { max: 15, timeWindow: '1 hour' } } }, async (request, reply) => {
+  app.post('/api/ai/scenario-why', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       await requireUser(request);
-      const input = securityCoachSchema.parse(request.body);
-      const answer = await askSecurityCoach(input);
-      return reply.send({ answer });
+      const input = scenarioWhySchema.parse(request.body);
+      const explanation = await explainScenarioWhy(input);
+      return reply.send({ explanation });
     } catch (error) {
-      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to ask the security coach.' });
-      if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The security coach is not configured yet.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION', message: 'Send a question and up to nine recent chat messages.' });
-      if (error instanceof Error && error.message === 'AI_INVALID_OUTPUT') return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The security coach could not form a response. Please try again.' });
-      request.log.error(error, 'Security coach request failed');
-      return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The security coach is unavailable right now. Please try again later.' });
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to request an explanation.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION_CONTEXT', message: 'A valid scenario answer is required for a focused explanation.' });
+      if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'Question explanations are not configured yet.' });
+      if (error instanceof Error && error.message === 'AI_INVALID_OUTPUT') return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The explanation could not be generated. Please try again.' });
+      request.log.error(error, 'Scenario explanation failed');
+      return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The explanation is unavailable right now. Please try again later.' });
     }
   });
 

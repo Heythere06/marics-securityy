@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
-import { securityCoachSchema } from './modules/ai.js';
 
 describe('health endpoint', () => {
   let app: FastifyInstance;
@@ -29,15 +28,15 @@ describe('health endpoint', () => {
     expect(response.json().error).toBe('AUTH_REQUIRED');
   });
 
-  it('protects security coach questions from unauthenticated callers', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/ai/ask',
-      payload: { language: 'en', messages: [{ role: 'user', content: 'How do I secure my account?' }] },
-    });
-
+  it('protects scenario-specific explanations from unauthenticated callers', async () => {
+    const response = await app.inject({ method: 'POST', url: '/api/ai/scenario-why', payload: {} });
     expect(response.statusCode).toBe(401);
     expect(response.json().error).toBe('AUTH_REQUIRED');
+  });
+
+  it('does not expose a general security chat endpoint', async () => {
+    const response = await app.inject({ method: 'POST', url: '/api/ai/ask', payload: { prompt: 'How do I secure my account?' } });
+    expect(response.statusCode).toBe(404);
   });
 
   it('requires authentication to view a personal certificate shelf', async () => {
@@ -106,15 +105,5 @@ describe('health endpoint', () => {
     const response = await app.inject({ method: 'POST', url: '/api/organizations/00000000-0000-0000-0000-000000000001/reports', payload: { format: 'csv' } });
     expect(response.statusCode).toBe(401);
     expect(response.json().error).toBe('AUTH_REQUIRED');
-  });
-});
-
-describe('security coach input', () => {
-  it('limits chat context and requires the latest message to be from the user', () => {
-    const validMessages = [{ role: 'assistant' as const, content: 'Prior answer' }, { role: 'user' as const, content: 'How do I protect my account?' }];
-
-    expect(securityCoachSchema.safeParse({ language: 'en', messages: validMessages }).success).toBe(true);
-    expect(securityCoachSchema.safeParse({ language: 'en', messages: [...validMessages, { role: 'assistant', content: 'A reply' }] }).success).toBe(false);
-    expect(securityCoachSchema.safeParse({ language: 'en', messages: Array.from({ length: 11 }, () => ({ role: 'user', content: 'Question' })) }).success).toBe(false);
   });
 });

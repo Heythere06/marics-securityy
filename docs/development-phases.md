@@ -25,7 +25,7 @@ Training answers and module counters now persist through the authenticated API. 
 
 ## Phase 3 progress
 
-The initial Claude integration is ready behind the backend: `POST /api/ai/generate-scenario` validates the request, authenticates the user, limits generation to five requests per hour, validates structured scenario output, and caches successful content in PostgreSQL. Apply `supabase/migrations/202609190005_ai_content.sql` after the training migration before using it with an authenticated account.
+The existing Claude scenario-generation endpoint validates the request, authenticates the user, limits generation to five requests per hour, validates structured scenario output, and caches successful content in PostgreSQL. This training-experience pass adds no AI behavior; general-purpose chat is not exposed, and future follow-up remains deferred to the question-specific "Ask why" affordance. Apply `supabase/migrations/202609190005_ai_content.sql` after the training migration before using generation with an authenticated account.
 
 The provider is not called during automated tests. Remaining Phase 3 work includes a user-facing generated-scenario experience, moderation checks, usage analytics, multilingual prompt quality review, and provider failure/cost monitoring.
 

@@ -20,7 +20,7 @@ Phase 4 adds `organization_invitations` and PostgreSQL security-definer function
 
 Apply `202609190007_auth_profiles.sql` after the organization migration. It extends profiles with account intent and updates the Auth trigger to persist country and preferred language metadata. It also creates the only role-promotion path for organization administrators.
 
-Apply every migration in filename order. The assessment API requires ten answers; assessment rows remain compatible because answer count is enforced by the validated API contract rather than a database row-count constraint.
+The current migration sequence includes `202609190017_training_four_options.sql`. Apply every migration in filename order. The assessment API requires ten answers; assessment rows remain compatible because answer count is enforced by the validated API contract rather than a database row-count constraint. Published training scenarios use four answer options, A through D, with exactly one correct option; replay-safe progress is maintained by the backend while every attempt remains in `training_attempts`.
 
 The same migration redefines invitation acceptance to set the authenticated user's role to `employee`. This update occurs only after a valid, unexpired, hashed invitation token is consumed; users cannot assign themselves an employee or administrator role from the frontend.
 
@@ -33,3 +33,7 @@ Migration `202609190013_org_team_risk.sql` adds organization team-risk aggregati
 Migration `202609190014_schema_repair.sql` repairs missing additive columns, settings, and RLS policies after interrupted/manual setup. It does not replace the ordered migration chain.
 
 Migration `202609190015_admin_scenarios.sql` adds protected admin scenario management and public reads for published training content. Migration `202609300001_user_module_certificates.sql` ensures a user can receive at most one certificate per training module; the backend awards it after every distinct scenario in that module has been attempted.
+
+Migration `202610050001_training_learning_material.sql` adds English, Afrikaans, and Portuguese learning material to each training module, includes it in learner and admin catalogs, and requires all three learning sections before a module can be published.
+
+Migration `202610050002_sql_injection_scenarios.sql` completes the existing SQL-injection practice module with a fourth option on its first scenario and five additional four-option scenarios. It does not publish the module; a MARICS administrator must publish it through the guarded admin flow after reviewing the content.

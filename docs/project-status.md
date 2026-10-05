@@ -116,12 +116,13 @@ A signup selection does not grant administrator access. Organization administrat
 ### Individual training
 
 - Published modules and scenarios load from PostgreSQL.
-- Users can select available scenarios from the database catalog.
+- Each published module includes localized learning material explaining why the threat works, its warning signs, and safer practice, alongside the scenario catalog.
+- Users can browse modules, select scenarios within a module, and see progress in the training flow.
 - Scenario content and options support language fallback: selected language, then English, then first available translation.
-- Immediate answer result includes correctness, stored choice feedback, explanation, and correct option.
+- Immediate answer feedback includes correctness, stored choice feedback, explanation, a correct-answer streak, and a module-completion moment; the future "Ask why" follow-up is disabled and question-scoped.
 - Attempts persist in `training_attempts`.
 - Per-user/per-module progress persists in `training_progress`.
-- Dashboard displays attempted versus total scenarios by module.
+- Training catalog and dashboard display attempted versus total scenarios by module.
 - Server recommends an unfinished module matching the user's risk-profile focus area, with a next-unfinished fallback.
 - Loading, empty, unavailable, and answer-save error states exist.
 
@@ -162,6 +163,7 @@ Implemented admin UI:
 - Organizations panel with search.
 - Training catalog panel.
 - Scenario list and localized create/edit form with per-option correctness, choice feedback, and explanation fields.
+- Per-module EN/AF/PT learning-material editor in the same catalog workflow.
 - Platform analytics panel.
 - Audit-log panel.
 - AI moderation and certificate screens remain explicit staged placeholders.

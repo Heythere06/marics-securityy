@@ -15,13 +15,13 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `/api/certificates` and `/api/certificates/verify/:verificationId`
 * `/api/organizations/:organizationId/reports`
 * `POST /api/scenarios/:scenarioSlug/answer` records a verified training attempt and updates the user's module progress.
-* `GET /api/training/modules` returns published modules and their available scenario slugs for the authenticated user.
+* `GET /api/training/modules` returns published modules, localized learning material, and their available scenario slugs for the authenticated user.
 * `GET /api/training/scenarios/:scenarioSlug` returns a published scenario, localized content, options, risk dimensions, and stored feedback.
 * `GET /api/users/me/risk-profile` returns the authenticated user's awareness score, strongest and focus dimensions, category scores, and last-updated time.
 * `GET /api/users/me/training-progress` returns the authenticated user's aggregate attempts plus persisted per-module attempts, correct answers, scenario counts, and completion state.
 * `GET /api/certificates` returns the authenticated user's certificates and awards any eligible completed-module certificates. `GET /api/certificates/verify/:verificationId` publicly validates a certificate without exposing account data beyond recipient and module.
 * `POST /api/ai/generate-scenario` asks Claude for one structured scenario and caches it by user, module, language, and prompt. It is authenticated and limited to five requests per hour; the MARICS admin scenario editor uses it to populate a reviewable draft.
-* `POST /api/ai/ask` answers defensive cybersecurity questions for signed-in users, accepts up to ten recent messages for follow-up context, and is limited to fifteen requests per hour. Messages are not persisted by the API.
+* `POST /api/ai/scenario-why` returns one short explanation for the authenticated user's current scenario answer. It accepts only bounded scenario/answer context, has no prompt or message-history field, and is limited to ten requests per hour.
 * `POST /api/organizations` creates an organization and makes the authenticated creator its admin.
 * `POST /api/organizations/:organizationId/invitations` creates a hashed, expiring invitation for an admin-managed organization.
 * `POST /api/organizations/invitations/accept` accepts an invitation for the authenticated user.
@@ -38,8 +38,8 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `POST /api/admin/organizations` creates an organization through the audited admin path.
 * `PATCH /api/admin/organizations/:organizationId/suspended` suspends or reactivates an organization.
 * `PATCH /api/admin/organizations/:organizationId/admins` assigns or removes an organization administrator.
-* `GET /api/admin/training/catalog` returns module and language-completeness data.
-* `PATCH /api/admin/training/modules/:moduleId` updates module content/publication.
+* `GET /api/admin/training/catalog` returns module content, localized learning material, and language-completeness data.
+* `PATCH /api/admin/training/modules/:moduleId` updates module content and one or more localized learning-material blocks; publishing requires all three material sections in English, Afrikaans, and Portuguese.
 * `PATCH /api/admin/training/modules/:moduleId/archive` archives or restores a module.
 * `GET /api/admin/analytics` returns platform-wide weakness and completion aggregates.
 * `GET /api/admin/audit-log` returns the protected admin audit trail.

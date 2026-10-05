@@ -41,24 +41,24 @@ export async function getProfile(accessToken: string) {
   return (await response.json()).profile as { full_name: string; preferred_language: string; role: 'individual' | 'employee' | 'organization_admin' | 'marics_admin'; account_type: string } | null;
 }
 
-export async function saveTrainingAnswer(accessToken: string, scenarioSlug: string, optionKey: 'A' | 'B' | 'C') {
+export async function saveTrainingAnswer(accessToken: string, scenarioSlug: string, optionKey: 'A' | 'B' | 'C' | 'D') {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/scenarios/${scenarioSlug}/answer`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ optionKey }),
   });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training answer could not be saved');
-  return (await response.json()) as { isCorrect: boolean; feedback: Record<string, string>; explanation: Record<string, string>; correctOptionKey: 'A' | 'B' | 'C'; progress: { scenarios_attempted: number; scenarios_correct: number } };
+  return (await response.json()) as { isCorrect: boolean; feedback: Record<string, string>; explanation: Record<string, string>; correctOptionKey: 'A' | 'B' | 'C' | 'D'; progress: { scenarios_attempted: number; scenarios_correct: number } };
 }
 
 export async function getTrainingSummary(accessToken: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/users/me/training-progress`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/users/me/training-progress`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training progress could not be loaded');
   return (await response.json()) as { attempted: number; correct: number; lastAttemptAt: string | null; modules: Array<{ id: string; slug: string; title: Record<string, string>; scenarioCount: number; scenariosAttempted: number; scenariosCorrect: number; completed: boolean }>; recommendation: { slug: string; title: Record<string, string>; reason: 'focus-area' | 'next-unfinished' } | null };
 }
 
 export async function getOrganizations(accessToken: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Organizations could not be loaded');
   return (await response.json()).organizations as Array<{ id: string; name: string; isAdmin: boolean }>;
 }
@@ -70,7 +70,7 @@ export async function createOrganization(accessToken: string, name: string) {
 }
 
 export async function getOrganizationDashboard(accessToken: string, organizationId: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/dashboard`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Organization dashboard could not be loaded');
   return (await response.json()).dashboard as { organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; email?: string | null; joinedAt: string; attempted: number; correct: number; lastActivityAt: string; modulesCompleted: number; modulesTotal: number; riskSummary: string }>; teamRisk?: { employeeCount: number; assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number } };
 }
@@ -166,7 +166,7 @@ export async function createAdminModule(accessToken: string, input: { slug: stri
   return (await response.json()).module;
 }
 
-export async function createAdminScenario(accessToken: string, input: { moduleId: string; scenarioId?: string; slug: string; content: Record<string, { title: string; scenario: string }>; riskDimensions: string[]; options: Array<{ optionKey: 'A' | 'B' | 'C'; content: Record<string, string>; isCorrect: boolean; feedback: Record<string, { choice: string; explanation: string }> }> }) {
+export async function createAdminScenario(accessToken: string, input: { moduleId: string; scenarioId?: string; slug: string; content: Record<string, { title: string; scenario: string }>; riskDimensions: string[]; options: Array<{ optionKey: 'A' | 'B' | 'C' | 'D'; content: Record<string, string>; isCorrect: boolean; feedback: Record<string, { choice: string; explanation: string }> }> }) {
   const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/admin/scenarios`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Scenario could not be created');
   return (await response.json()).scenario;
@@ -181,14 +181,14 @@ export async function generateScenario(accessToken: string, input: { moduleSlug:
   return payload.scenario;
 }
 
-export async function askSecurityCoach(accessToken: string, input: { language: 'en' | 'af' | 'pt'; messages: Array<{ role: 'user' | 'assistant'; content: string }> }) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/ask`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-  const payload = await response.json().catch(() => ({})) as { answer?: string; message?: string };
-  if (!response.ok || !payload.answer) throw new Error(payload.message ?? 'The security coach could not answer right now');
-  return payload.answer;
+export async function getScenarioWhy(accessToken: string, input: { language: 'en' | 'af' | 'pt'; question: { moduleTitle: string; scenarioTitle: string; scenarioPrompt: string; selectedAnswer: string; correctAnswer: string; isCorrect: boolean; riskDimensions: string[]; existingExplanation: string } }) {
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/scenario-why`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(25_000) });
+  const payload = await response.json().catch(() => ({})) as { explanation?: string; message?: string };
+  if (!response.ok || !payload.explanation) throw new Error(payload.message ?? 'A focused explanation could not be generated');
+  return payload.explanation;
 }
 
-export type AdminScenario = { id: string; moduleId: string; slug: string; content: Record<string, { title: string; scenario: string }>; riskDimensions: string[]; options: Array<{ id: string; optionKey: 'A' | 'B' | 'C'; content: Record<string, string>; isCorrect: boolean; feedback: Record<string, { choice: string; explanation: string }> }> };
+export type AdminScenario = { id: string; moduleId: string; slug: string; content: Record<string, { title: string; scenario: string }>; riskDimensions: string[]; options: Array<{ id: string; optionKey: 'A' | 'B' | 'C' | 'D'; content: Record<string, string>; isCorrect: boolean; feedback: Record<string, { choice: string; explanation: string }> }> };
 
 export async function getAdminScenarios(accessToken: string, moduleId: string) {
   return (await adminJson<{ scenarios: AdminScenario[] }>(accessToken, `/api/admin/modules/${moduleId}/scenarios`)).scenarios;
@@ -232,7 +232,17 @@ export async function searchAdminOrganizations(accessToken: string, query = '') 
 }
 
 export async function getAdminTrainingCatalog(accessToken: string) {
-  return (await adminJson<{ catalog: { languages: string[]; modules: Array<{ id: string; slug: string; title: Record<string, string>; published: boolean; archived: boolean; scenarioCount: number; languageCompleteness: Record<string, boolean> }> } }>(accessToken, '/api/admin/training/catalog')).catalog;
+  return (await adminJson<{ catalog: { languages: string[]; modules: AdminTrainingModule[] } }>(accessToken, '/api/admin/training/catalog')).catalog;
+}
+
+export type TrainingLanguage = 'en' | 'af' | 'pt';
+export type ModuleLearningMaterialBlock = { whyItMatters: string; warningSigns: string; bestPractice: string };
+export type ModuleLearningMaterial = Partial<Record<TrainingLanguage, ModuleLearningMaterialBlock>>;
+export type AdminTrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; learningMaterial: ModuleLearningMaterial; published: boolean; archived: boolean; scenarioCount: number; languageCompleteness: Record<string, boolean> };
+
+export async function updateAdminTrainingModule(accessToken: string, moduleId: string, input: { title: Record<string, string>; description: Record<string, string>; published: boolean; learningMaterial: ModuleLearningMaterial }) {
+  const result = await adminJson<{ module: { learning_material?: ModuleLearningMaterial } }>(accessToken, `/api/admin/training/modules/${moduleId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  return result.module.learning_material ?? input.learningMaterial;
 }
 
 export async function getAdminAnalytics(accessToken: string) {
@@ -243,17 +253,17 @@ export async function getAdminAuditLog(accessToken: string) {
   return (await adminJson<{ entries: Array<{ id: string; action: string; targetType: string; targetId: string | null; createdAt: string }> }>(accessToken, '/api/admin/audit-log')).entries;
 }
 
-export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; scenarioCount: number; scenarioSlugs: string[] };
-export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C'; content: Record<string, string> }> };
+export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; learningMaterial: ModuleLearningMaterial; scenarioCount: number; scenarioSlugs: string[] };
+export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
 
 export async function getTrainingModules(accessToken: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training modules could not be loaded');
   return (await response.json()).modules as TrainingModule[];
 }
 
 export async function getTrainingScenario(accessToken: string, scenarioSlug: string) {
-  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/scenarios/${scenarioSlug}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/scenarios/${scenarioSlug}`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training scenario could not be loaded');
   return (await response.json()).scenario as TrainingScenario;
 }

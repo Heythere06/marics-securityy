@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { getTrainingSummary, splitOptionFeedback } from './training.js';
+import { getTrainingSummary, listPublishedModules, splitOptionFeedback, trainingAnswerSchema } from './training.js';
 import { hasAttemptedEveryScenario } from './certificates.js';
+import { adminModuleUpdateSchema } from './admin.js';
+import { scenarioWhySchema } from './ai.js';
 
 function createQuery<T>(data: T, calls: string[]) {
   const query = {
@@ -26,6 +28,11 @@ function createQuery<T>(data: T, calls: string[]) {
 }
 
 describe('training answer explanations', () => {
+  it('accepts all four answer keys and rejects unsupported keys', () => {
+    expect(trainingAnswerSchema.parse({ optionKey: 'D' }).optionKey).toBe('D');
+    expect(() => trainingAnswerSchema.parse({ optionKey: 'E' })).toThrow();
+  });
+
   it('returns choice feedback and a threat-focused explanation from structured option feedback', () => {
     const parsed = splitOptionFeedback({
       en: {
@@ -41,6 +48,56 @@ describe('training answer explanations', () => {
   it('supports legacy plain-string feedback', () => {
     const parsed = splitOptionFeedback({ en: 'Verify through a known phone number or in person.' });
     expect(parsed.choice.en).toBe(parsed.explanation.en);
+  });
+});
+
+describe('localized module learning material', () => {
+  const block = { whyItMatters: 'Attackers exploit trust to prompt unsafe action.', warningSigns: 'Look for unusual pressure or requests.', bestPractice: 'Pause and verify independently.' };
+
+  it('accepts a single-language edit so authors can complete translations one at a time', () => {
+    const result = adminModuleUpdateSchema.parse({ title: { en: 'Module' }, description: { en: 'Description' }, published: false, learningMaterial: { af: block } });
+    expect(result.learningMaterial.af).toEqual(block);
+  });
+
+  it('rejects incomplete or unsupported learning-material translations', () => {
+    expect(() => adminModuleUpdateSchema.parse({ title: {}, description: {}, published: false, learningMaterial: { en: { ...block, bestPractice: '' } } })).toThrow();
+    expect(() => adminModuleUpdateSchema.parse({ title: {}, description: {}, published: false, learningMaterial: { fr: block } })).toThrow();
+  });
+
+  it('includes module learning material in the published learner catalog', async () => {
+    const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      const learningMaterial = { en: block };
+      const client = { from: () => createQuery([{ id: 'module-a', slug: 'module-a', title: { en: 'Module A' }, description: { en: 'Description' }, learning_material: learningMaterial, scenarios: [{ id: 'scenario-a', slug: 'scenario-a' }] }], []) };
+      const [module] = await listPublishedModules(client as never);
+      expect(module.learningMaterial).toEqual(learningMaterial);
+      expect(module.scenarioSlugs).toEqual(['scenario-a']);
+    } finally {
+      if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+    }
+  });
+});
+
+describe('question-specific why context', () => {
+  const question = {
+    moduleTitle: 'Phishing',
+    scenarioTitle: 'Unexpected document share',
+    scenarioPrompt: 'A message asks you to sign in through an unfamiliar link.',
+    selectedAnswer: 'Open the official service directly.',
+    correctAnswer: 'Open the official service directly.',
+    isCorrect: true,
+    riskDimensions: ['Links', 'Credentials'],
+    existingExplanation: 'A familiar name can be spoofed.',
+  };
+
+  it('accepts bounded scenario answer context', () => {
+    expect(scenarioWhySchema.safeParse({ language: 'en', question }).success).toBe(true);
+  });
+
+  it('rejects arbitrary prompts and chat history', () => {
+    expect(scenarioWhySchema.safeParse({ language: 'en', question, prompt: 'Tell me anything' }).success).toBe(false);
+    expect(scenarioWhySchema.safeParse({ language: 'en', question, messages: [{ role: 'user', content: 'Hi' }] }).success).toBe(false);
   });
 });
 

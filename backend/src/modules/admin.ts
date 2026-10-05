@@ -18,7 +18,7 @@ export const adminScenarioSchema = z.object({
     content: z.record(z.enum(['en', 'af', 'pt']), z.string().trim().min(1).max(500)),
     isCorrect: z.boolean(),
     feedback: z.record(z.enum(['en', 'af', 'pt']), z.object({ choice: z.string().trim().min(1).max(1000), explanation: z.string().trim().min(1).max(2000) })),
-  })).length(3).refine((options) => options.filter((option) => option.isCorrect).length === 1),
+  })).length(4).refine((options) => options.filter((option) => option.isCorrect).length === 1),
 });
 export const adminPublishSchema = z.object({ published: z.boolean() });
 export const adminSettingSchema = z.object({
@@ -38,6 +38,11 @@ export const adminModuleUpdateSchema = z.object({
   title: z.record(z.string(), z.string()),
   description: z.record(z.string(), z.string()),
   published: z.boolean(),
+  learningMaterial: z.record(z.enum(['en', 'af', 'pt']), z.object({
+    whyItMatters: z.string().trim().min(10).max(800),
+    warningSigns: z.string().trim().min(10).max(800),
+    bestPractice: z.string().trim().min(10).max(800),
+  })).refine((material) => Object.keys(material).length > 0),
 });
 export const adminArchiveSchema = z.object({ archived: z.boolean() });
 
@@ -170,6 +175,7 @@ export async function updateAdminTrainingModule(client: SupabaseClient, moduleId
     target_title: input.title,
     target_description: input.description,
     target_published: input.published,
+    target_learning_material: input.learningMaterial,
   });
   if (error) throw error;
   return data;
