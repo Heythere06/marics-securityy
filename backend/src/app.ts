@@ -676,12 +676,14 @@ export function buildApp() {
     try {
       const auth = await requireUser(request);
       const input = trainingAnswerSchema.parse(request.body);
+      const scenarioSlug = z.string().regex(/^[a-z0-9-]+$/).parse((request.params as { scenarioSlug: string }).scenarioSlug);
       const userClient = createAuthenticatedClient(auth.accessToken!);
       const { data } = await userClient.auth.getUser(auth.accessToken);
-      const result = await recordTrainingAnswer(userClient, data.user!, (request.params as { scenarioSlug: string }).scenarioSlug, input);
+      const result = await recordTrainingAnswer(userClient, data.user!, scenarioSlug, input);
       return reply.code(201).send(result);
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to save training progress.' });
+      if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ANSWER', message: 'Choose one of the available responses.' });
       request.log.error(error, 'Training answer failed');
       return reply.code(500).send({ error: 'TRAINING_UNAVAILABLE', message: 'We could not save this training attempt.' });
@@ -746,9 +748,10 @@ export function buildApp() {
       return reply.send({ scenario });
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this scenario.' });
+      if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid training scenario.' });
       request.log.error(error, 'Training scenario lookup failed');
-      return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
+      return reply.code(500).send({ error: 'TRAINING_SCENARIO_UNAVAILABLE', message: 'We could not load this training scenario.' });
     }
   });
 

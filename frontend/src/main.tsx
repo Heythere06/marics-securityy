@@ -248,7 +248,7 @@ function App() {
       const completedModule = nextSummary.modules.find((module) => module.slug === trainingScenario.module.slug);
       setTrainingSummary(nextSummary);
       setTrainingStreak((current) => result.isCorrect ? current + 1 : 0);
-      setTrainingResult({ isCorrect: result.isCorrect, feedback: pick(result.feedback), explanation: pick(result.explanation), correctOptionKey: result.correctOptionKey, moduleCompleted: !priorModule?.completed && Boolean(completedModule?.completed) });
+      setTrainingResult({ isCorrect: result.isCorrect, feedback: pick(result.feedback), explanation: pick(result.explanation), correctOptionKey: result.correctOptionKey, moduleCompleted: priorModule !== undefined && !priorModule.completed && Boolean(completedModule?.completed) });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'We could not save your training answer.');
     } finally {
@@ -840,7 +840,6 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: bo
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppErrorBoundary><App /></AppErrorBoundary></StrictMode>);
-
 
 
 

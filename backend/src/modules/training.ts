@@ -50,24 +50,36 @@ export async function listPublishedModules(client: SupabaseClient) {
 export async function getScenario(client: SupabaseClient, scenarioSlug: string) {
   const { data, error } = await publicContentClient(client)
     .from('scenarios')
-    .select('id, slug, content, risk_dimensions, training_modules!inner(slug, title), scenario_options(option_key, content)')
+    .select('id, slug, content, risk_dimensions, training_modules!inner(slug, title, is_published, is_assessment), scenario_options(option_key, content)')
     .eq('slug', scenarioSlug)
     .eq('training_modules.is_published', true)
-    .single();
+    .eq('training_modules.is_assessment', false)
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('SCENARIO_UNAVAILABLE');
   return {
     id: data.id,
     slug: data.slug,
     content: data.content,
     riskDimensions: data.risk_dimensions,
-    module: Array.isArray(data.training_modules) ? data.training_modules[0] : data.training_modules,
+    module: (() => {
+      const module = Array.isArray(data.training_modules) ? data.training_modules[0] : data.training_modules;
+      return { slug: module.slug, title: module.title };
+    })(),
     options: data.scenario_options,
   };
 }
 
 export async function recordTrainingAnswer(client: SupabaseClient, user: User, scenarioSlug: string, input: z.infer<typeof trainingAnswerSchema>) {
-  const { data: scenario, error: scenarioError } = await publicContentClient(client).from('scenarios').select('id, module_id').eq('slug', scenarioSlug).single();
+  const { data: scenario, error: scenarioError } = await publicContentClient(client)
+    .from('scenarios')
+    .select('id, module_id, training_modules!inner(is_published, is_assessment)')
+    .eq('slug', scenarioSlug)
+    .eq('training_modules.is_published', true)
+    .eq('training_modules.is_assessment', false)
+    .maybeSingle();
   if (scenarioError) throw scenarioError;
+  if (!scenario) throw new Error('SCENARIO_UNAVAILABLE');
   const { data: options, error: optionsError } = await publicContentClient(client).from('scenario_options').select('id, option_key, is_correct, feedback').eq('scenario_id', scenario.id);
   if (optionsError) throw optionsError;
   const selected = options.find((option) => option.option_key === input.optionKey);
@@ -89,7 +101,7 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
   const moduleCompleted = hasAttemptedEveryScenario(scenarioIds, attemptsForModule.map((attempt) => attempt.scenario_id));
   const { data: currentProgress, error: currentProgressError } = await client.from('training_progress').select('scenarios_attempted, scenarios_correct, completed_at').eq('user_id', user.id).eq('module_id', scenario.module_id).maybeSingle();
   if (currentProgressError) throw currentProgressError;
-  const completedAt = currentProgress?.completed_at ?? (moduleCompleted ? new Date().toISOString() : null);
+  const completedAt = moduleCompleted ? currentProgress?.completed_at ?? new Date().toISOString() : null;
   const { data: progress, error: progressError } = await client.from('training_progress').upsert({ user_id: user.id, module_id: scenario.module_id, scenarios_attempted: (currentProgress?.scenarios_attempted ?? 0) + (wasAttempted ? 0 : 1), scenarios_correct: (currentProgress?.scenarios_correct ?? 0) + (!wasCorrect && selected.is_correct ? 1 : 0), completed_at: completedAt, updated_at: new Date().toISOString() }, { onConflict: 'user_id,module_id' }).select('scenarios_attempted, scenarios_correct, completed_at, updated_at').single();
   if (progressError) throw progressError;
   if (moduleCompleted) await awardModuleCertificate(client, user.id, scenario.module_id);
