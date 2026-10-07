@@ -23,12 +23,18 @@ export function AdminScenarioEditor({ accessToken, modules, onMessage, onModuleU
   const [generating, setGenerating] = useState(false);
 
   const load = async (id = moduleId) => {
-    if (!id) return;
+    if (!modules.some((module) => module.id === id)) {
+      setScenarios([]);
+      return;
+    }
     try { setScenarios(await getAdminScenarios(accessToken, id)); } catch (error) { onMessage(error instanceof Error ? error.message : 'Scenarios could not be loaded.'); }
   };
   useEffect(() => { void load(); }, [moduleId, accessToken]);
   useEffect(() => {
-    if (!moduleId && modules[0]) setModuleId(modules[0].id);
+    if (modules.length && !modules.some((module) => module.id === moduleId)) {
+      setModuleId(modules[0].id);
+      setDraft(emptyDraft(modules[0].id));
+    }
   }, [moduleId, modules]);
   useEffect(() => {
     const module = modules.find((entry) => entry.id === moduleId);
