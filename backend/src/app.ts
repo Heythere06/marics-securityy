@@ -58,12 +58,14 @@ async function requireUser(request: { headers: Record<string, string | string[] 
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 1_000_000 });
-  const productionOrigins = (process.env.FRONTEND_URL ?? process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173')
-    .split(',')
+  const configuredOrigins = [process.env.FRONTEND_URL, process.env.ALLOWED_ORIGINS]
+    .filter((origins): origins is string => Boolean(origins))
+    .flatMap((origins) => origins.split(','))
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const productionOrigins = configuredOrigins.length ? configuredOrigins : ['http://localhost:5173'];
 
-  const normalizeOriginPattern = (pattern: string) => pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+  const normalizeOriginPattern = (pattern: string) => pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
   const isAllowedOrigin = (origin: string | undefined, patterns: string[]) => {
     if (!origin) return true;
     return patterns.some((pattern) => {

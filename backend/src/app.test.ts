@@ -17,6 +17,43 @@ describe('health endpoint', () => {
     expect(response.json()).toEqual({ status: 'ok', service: 'marics-api' });
   });
 
+  it('allows configured frontend origins through production preflight checks', async () => {
+    const previousEnvironment = {
+      nodeEnv: process.env.NODE_ENV,
+      frontendUrl: process.env.FRONTEND_URL,
+      allowedOrigins: process.env.ALLOWED_ORIGINS,
+    };
+    process.env.NODE_ENV = 'production';
+    process.env.FRONTEND_URL = 'https://marics-securityy.vercel.app';
+    process.env.ALLOWED_ORIGINS = 'https://marics-securityy-frontend-*.vercel.app';
+
+    const corsApp = buildApp();
+    try {
+      await corsApp.ready();
+      const response = await corsApp.inject({
+        method: 'OPTIONS',
+        url: '/api/training/modules',
+        headers: {
+          origin: 'https://marics-securityy-frontend-44svulkur-marics.vercel.app',
+          'access-control-request-method': 'GET',
+          'access-control-request-headers': 'authorization',
+        },
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(response.headers['access-control-allow-origin']).toBe('https://marics-securityy-frontend-44svulkur-marics.vercel.app');
+      expect(response.headers['access-control-allow-credentials']).toBe('true');
+    } finally {
+      await corsApp.close();
+      if (previousEnvironment.nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousEnvironment.nodeEnv;
+      if (previousEnvironment.frontendUrl === undefined) delete process.env.FRONTEND_URL;
+      else process.env.FRONTEND_URL = previousEnvironment.frontendUrl;
+      if (previousEnvironment.allowedOrigins === undefined) delete process.env.ALLOWED_ORIGINS;
+      else process.env.ALLOWED_ORIGINS = previousEnvironment.allowedOrigins;
+    }
+  });
+
   it('protects AI generation from unauthenticated callers', async () => {
     const response = await app.inject({
       method: 'POST',
