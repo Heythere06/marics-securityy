@@ -34,7 +34,7 @@ The frontend runs on `http://localhost:5173` and the API on `http://localhost:40
 
 The current repository includes database-backed onboarding assessment, risk profiles, training, progress, recommendations, organizations, team-risk reports, audited admin controls, and a server-side AI adapter. AI generation remains a later product phase and is not yet a complete user-facing workflow.
 
-Supabase migrations must be applied in filename order through `202609190015_admin_scenarios.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, and localized scenario-authoring flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before `202609190015_admin_scenarios.sql`. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
+Supabase migrations must be applied in filename order through `202610070001_ai_scenario_followup_limits.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, and bounded AI follow-up flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
 
 ## Project Documentation
 

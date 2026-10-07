@@ -84,11 +84,20 @@ describe('question-specific why context', () => {
     moduleTitle: 'Phishing',
     scenarioTitle: 'Unexpected document share',
     scenarioPrompt: 'A message asks you to sign in through an unfamiliar link.',
+    options: [
+      { key: 'A', text: 'Open the official service directly.' },
+      { key: 'B', text: 'Use the unfamiliar link to sign in.' },
+      { key: 'C', text: 'Reply to the message for confirmation.' },
+      { key: 'D', text: 'Forward the link to a colleague.' },
+    ],
+    selectedOptionKey: 'A',
+    correctOptionKey: 'A',
     selectedAnswer: 'Open the official service directly.',
     correctAnswer: 'Open the official service directly.',
     isCorrect: true,
     riskDimensions: ['Links', 'Credentials'],
     existingExplanation: 'A familiar name can be spoofed.',
+    userQuestion: 'Why is it important to check the link?',
   };
 
   it('accepts bounded scenario answer context', () => {

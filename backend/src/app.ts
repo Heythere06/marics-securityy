@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
-import { explainScenarioWhy, generateScenario, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
+import { explainScenarioWhy, generateScenario, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
   adminArchiveSchema,
@@ -573,15 +573,21 @@ export function buildApp() {
     }
   });
 
-  app.post('/api/ai/scenario-why', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request, reply) => {
+  app.post('/api/ai/scenario-why', async (request, reply) => {
     try {
-      await requireUser(request);
+      const auth = await requireUser(request);
       const input = scenarioWhySchema.parse(request.body);
+      await reserveScenarioWhy(auth.userId!);
       const explanation = await explainScenarioWhy(input);
       return reply.send({ explanation });
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to request an explanation.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION_CONTEXT', message: 'A valid scenario answer is required for a focused explanation.' });
+      if (error instanceof Error && error.message === 'AI_FOLLOWUP_DAILY_LIMIT') return reply.code(429).send({ error: 'AI_FOLLOWUP_DAILY_LIMIT', message: 'You have reached today’s limit of 10 follow-up questions. Try again tomorrow.' });
+      if (error instanceof Error && error.message === 'AI_USAGE_CAP_REACHED') return reply.code(429).send({ error: 'AI_USAGE_CAP_REACHED', message: 'The platform has reached its monthly AI request limit. Please try again next month.' });
+      if (error instanceof Error && error.message === 'AI_RATE_LIMITED') return reply.code(429).send({ error: 'AI_RATE_LIMITED', message: 'You are asking questions too quickly. Wait a little and try again.' });
+      if (error instanceof Error && error.message === 'AI_FOLLOWUP_LIMITS_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_LIMITS_UNAVAILABLE', message: 'Question limits are not configured. Apply database migration 202610070001_ai_scenario_followup_limits.sql and retry.' });
+      if (error instanceof Error && error.message === 'AI_FOLLOWUP_LIMIT_CONFIG_INVALID') return reply.code(503).send({ error: 'AI_LIMITS_UNAVAILABLE', message: 'The platform AI limit settings are invalid. Ask an administrator to review them.' });
       if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'Question explanations are not configured yet.' });
       if (error instanceof Error && error.message === 'AI_INVALID_OUTPUT') return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The explanation could not be generated. Please try again.' });
       request.log.error(error, 'Scenario explanation failed');

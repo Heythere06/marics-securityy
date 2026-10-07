@@ -1,11 +1,12 @@
-﻿import { Component, StrictMode, useEffect, useState, type ChangeEvent, type Dispatch, type ErrorInfo, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+import { Component, StrictMode, Suspense, lazy, useEffect, useRef, useState, type ChangeEvent, type Dispatch, type ErrorInfo, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session } from '@supabase/supabase-js';
 import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getScenarioWhy, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, removeOrganizationMember, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, validateInvitation, verifyCertificate, type AdminOverview, type AdminTrainingModule, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
 import { supabase } from './lib/supabase';
 import { getTranslations, type Language } from './i18n';
-import { AdminScenarioEditor } from './AdminScenarioEditor';
 import './styles.css';
+
+const AdminScenarioEditor = lazy(() => import('./AdminScenarioEditor').then(({ AdminScenarioEditor: Editor }) => ({ default: Editor })));
 
 type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings';
 type AppRole = 'individual' | 'employee' | 'organization_admin' | 'marics_admin';
@@ -17,6 +18,8 @@ function App() {
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<AppRole>('individual');
   const [authReady, setAuthReady] = useState(supabase === null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authRetry, setAuthRetry] = useState(0);
   const [view, setView] = useState<View>('overview');
   const [assessmentIndex, setAssessmentIndex] = useState(0);
   const [onboardingScenarios, setOnboardingScenarios] = useState<OnboardingScenario[]>([]);
@@ -31,6 +34,8 @@ function App() {
   const [whyExplanation, setWhyExplanation] = useState<string | null>(null);
   const [whyError, setWhyError] = useState<string | null>(null);
   const [whyLoading, setWhyLoading] = useState(false);
+  const [whyQuestionOpen, setWhyQuestionOpen] = useState(false);
+  const [whyQuestionText, setWhyQuestionText] = useState('');
   const [trainingStreak, setTrainingStreak] = useState(0);
   const [trainingModules, setTrainingModules] = useState<TrainingModule[]>([]);
   const [trainingScenario, setTrainingScenario] = useState<TrainingScenario | null>(null);
@@ -50,13 +55,39 @@ function App() {
 
   useEffect(() => {
     if (!supabase) return;
+    let active = true;
+    const authTimeout = window.setTimeout(() => {
+      if (!active) return;
+      setAuthError('Sign-in status took too long to load. Check your connection and retry.');
+      setAuthReady(true);
+    }, 10_000);
     supabase.auth.getSession()
-      .then(({ data }) => setSession(data.session))
-      .catch(() => setSession(null))
-      .finally(() => setAuthReady(true));
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) {
+          setSession(data.session);
+          setAuthError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setSession(null);
+          setAuthError(error instanceof Error ? error.message : 'Sign-in status could not be loaded.');
+        }
+      })
+      .finally(() => {
+        if (active) {
+          window.clearTimeout(authTimeout);
+          setAuthReady(true);
+        }
+      });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
-    return () => listener.subscription.unsubscribe();
-  }, []);
+    return () => {
+      active = false;
+      window.clearTimeout(authTimeout);
+      listener.subscription.unsubscribe();
+    };
+  }, [authRetry]);
 
   useEffect(() => {
     if (!session || verificationId) return;
@@ -124,6 +155,8 @@ function App() {
     setTrainingResult(null);
     setWhyExplanation(null);
     setWhyError(null);
+    setWhyQuestionOpen(false);
+    setWhyQuestionText('');
     setTrainingError(null);
     setTrainingScenario(null);
     setTrainingLoading(true);
@@ -223,8 +256,8 @@ function App() {
     }
   };
 
-  const askScenarioWhy = async () => {
-    if (!session || !trainingScenario || !trainingAnswer || !trainingResult || whyLoading || whyExplanation) return;
+  const askScenarioWhy = async (userQuestion: string) => {
+    if (!session || !trainingScenario || !trainingAnswer || !trainingResult || whyLoading || whyExplanation || !userQuestion.trim()) return;
     const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
     const scenarioContent = trainingScenario.content[language] ?? trainingScenario.content.en ?? Object.values(trainingScenario.content)[0];
     const selectedAnswer = trainingScenario.options.find((option) => option.option_key === trainingAnswer);
@@ -239,11 +272,15 @@ function App() {
           moduleTitle: trainingScenario.module.title[language] ?? trainingScenario.module.title.en ?? trainingScenario.module.slug,
           scenarioTitle: scenarioContent?.title ?? trainingScenario.slug,
           scenarioPrompt: scenarioContent?.scenario ?? scenarioContent?.message ?? scenarioContent?.title ?? '',
+          options: trainingScenario.options.map((option) => ({ key: option.option_key, text: localized(option.content) })),
+          selectedOptionKey: trainingAnswer,
+          correctOptionKey: trainingResult.correctOptionKey,
           selectedAnswer: localized(selectedAnswer.content),
           correctAnswer: localized(correctAnswer.content),
           isCorrect: trainingResult.isCorrect,
           riskDimensions: trainingScenario.riskDimensions,
           existingExplanation: trainingResult.explanation,
+          userQuestion: userQuestion.trim(),
         },
       }));
     } catch (error) {
@@ -254,6 +291,7 @@ function App() {
   };
 
   if (!authReady) return <div className="loading-screen">Loading your secure workspace...</div>;
+  if (authError && !session) return <main className="error-screen"><section className="auth-panel"><p className="eyebrow">MARICS Security</p><h1>Your secure workspace could not load.</h1><p className="lede" role="alert">{authError}</p><button className="primary" onClick={() => { setAuthError(null); setAuthReady(false); setAuthRetry((attempt) => attempt + 1); }}>Retry workspace <b>&#8594;</b></button></section></main>;
   if (verificationId) return <CertificateVerificationPage verificationId={verificationId} />;
   if (!session) return <PublicSite language={language} setLanguage={setLanguage} />;
 
@@ -265,7 +303,7 @@ function App() {
     {view === 'overview' && role === 'individual' && <Overview displayName={displayName} onboardingComplete={onboardingComplete} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
     {role === 'marics_admin' && view !== 'overview' && <AdminSecondaryView view={view} session={session} />}
     {view === 'assessment' && (role === 'individual' || role === 'employee') && (riskProfile && !retakingAssessment ? <RiskProfileView profile={riskProfile} onRetake={() => void beginAssessment()} /> : <AssessmentView language={language} t={t} loading={assessmentLoading} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.'); setAssessmentLoading(false); }); }} />)}
-    {view === 'training' && (role === 'individual' || role === 'employee') && !needsOnboarding && <ModuleTrainingView language={language} modules={trainingModules} summary={trainingSummary} selectedModuleSlug={selectedTrainingModuleSlug} onModuleSelect={selectTrainingModule} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={(scenarioSlug) => void selectTrainingScenario(scenarioSlug, selectedTrainingModuleSlug ?? undefined)} onNextScenario={() => { const slugs = trainingModules.find((module) => module.slug === selectedTrainingModuleSlug)?.scenarioSlugs ?? []; const currentIndex = slugs.indexOf(selectedScenarioSlug ?? ''); const nextSlug = slugs[currentIndex + 1] ?? slugs[0]; if (nextSlug) void selectTrainingScenario(nextSlug, selectedTrainingModuleSlug ?? undefined); }} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} streak={trainingStreak} submitting={trainingSubmitting} whyExplanation={whyExplanation} whyError={whyError} whyLoading={whyLoading} onAskWhy={askScenarioWhy} onAnswer={setTrainingAnswer} onSubmit={submitTrainingAnswer} />}
+    {view === 'training' && (role === 'individual' || role === 'employee') && !needsOnboarding && <ModuleTrainingView language={language} modules={trainingModules} summary={trainingSummary} selectedModuleSlug={selectedTrainingModuleSlug} onModuleSelect={selectTrainingModule} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={(scenarioSlug) => void selectTrainingScenario(scenarioSlug, selectedTrainingModuleSlug ?? undefined)} onNextScenario={() => { const slugs = trainingModules.find((module) => module.slug === selectedTrainingModuleSlug)?.scenarioSlugs ?? []; const currentIndex = slugs.indexOf(selectedScenarioSlug ?? ''); const nextSlug = slugs[currentIndex + 1] ?? slugs[0]; if (nextSlug) void selectTrainingScenario(nextSlug, selectedTrainingModuleSlug ?? undefined); }} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} streak={trainingStreak} submitting={trainingSubmitting} whyExplanation={whyExplanation} whyError={whyError} whyLoading={whyLoading} whyQuestionOpen={whyQuestionOpen} whyQuestionText={whyQuestionText} onWhyQuestionTextChange={setWhyQuestionText} onWhyQuestionOpenChange={setWhyQuestionOpen} onAskWhy={() => void askScenarioWhy(whyQuestionText)} onAnswer={setTrainingAnswer} onSubmit={submitTrainingAnswer} />}
     {view === 'organization' && role === 'organization_admin' && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} />}
     {view === 'reports' && role === 'organization_admin' && <OrganizationReports session={session} organizations={organizations} />}
     {view === 'settings' && role === 'organization_admin' && <OrganizationSettings session={session} organizations={organizations} setOrganizations={setOrganizations} />}
@@ -359,11 +397,12 @@ function PlatformAdminDashboard({ displayName, session }: { displayName: string;
       setLoading(false);
     }
   };
+  useEffect(() => { void loadOverview(); }, [session.access_token]);
   const createModule = async (event: FormEvent) => { event.preventDefault(); try { await createAdminModule(session.access_token, { slug: moduleSlug, title: moduleTitle, description: moduleDescription }); setModuleSlug(''); setModuleTitle(''); setModuleDescription(''); setOverview(await getAdminOverview(session.access_token)); } catch (error) { setMessage(error instanceof Error ? error.message : 'Module could not be created.'); } };
   const toggleModule = async (id: string, published: boolean) => { try { await setAdminModulePublished(session.access_token, id, published); setOverview(await getAdminOverview(session.access_token)); } catch (error) { setMessage(error instanceof Error ? error.message : 'Module could not be updated.'); } };
   const updateLanguages = async (event: ChangeEvent<HTMLSelectElement>) => { const values = Array.from(event.target.selectedOptions).map((option) => option.value); try { await setAdminLanguages(session.access_token, values); setOverview((current) => current ? { ...current, languages: values } : current); } catch (error) { setMessage(error instanceof Error ? error.message : 'Languages could not be updated.'); } };
   const counts = overview?.counts;
-  return <section className="content"><Header eyebrow="MARICS administration" title={`Welcome, ${displayName.split(/\s+/)[0] || 'admin'}.`} detail="Manage platform users, tenants, training content, languages, and reports from one protected control plane." />{message && <div className="auth-message" role="alert">{message}</div>}<div className="admin-grid"><article className="admin-card"><span>USERS</span><strong>{counts?.users ?? '—'}</strong><p>Profiles in the platform.</p></article><article className="admin-card"><span>ORGANIZATIONS</span><strong>{counts?.organizations ?? '—'}</strong><p>Tenant workspaces.</p></article><article className="admin-card"><span>MODULES</span><strong>{counts ? `${counts.publishedModules} / ${counts.modules}` : '—'}</strong><p>Published training modules.</p></article></div>{overview ? <><div className="admin-columns"><article className="admin-panel"><p className="card-kicker">RECENT USERS</p><div className="admin-list">{overview.users.length ? overview.users.map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} &#183; {user.language}</span></div>) : <p className="admin-empty-text">No users found.</p>}</div></article><article className="admin-panel"><p className="card-kicker">ORGANIZATIONS</p><div className="admin-list">{overview.organizations.length ? overview.organizations.map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>Tenant workspace</span></div>) : <p className="admin-empty-text">No organizations found.</p>}</div></article></div><div className="admin-columns"><article className="admin-panel"><p className="card-kicker">MODULE MANAGEMENT</p><form className="admin-form" onSubmit={createModule}><input value={moduleSlug} onChange={(event) => setModuleSlug(event.target.value)} placeholder="module-slug" required /><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} placeholder="Module title" required /><input value={moduleDescription} onChange={(event) => setModuleDescription(event.target.value)} placeholder="Description" required /><button className="primary">Add module <b>&#8594;</b></button></form><div className="admin-list">{overview.modules.map((module) => <div className="admin-row" key={module.id}><strong>{module.title.en ?? module.slug}</strong><button className="text-button" onClick={() => toggleModule(module.id, !module.published)}>{module.published ? 'Unpublish' : 'Publish'}</button></div>)}</div></article><article className="admin-panel"><p className="card-kicker">PLATFORM SETTINGS</p><label className="org-label">Supported languages<select multiple value={overview.languages} onChange={updateLanguages}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label><p className="admin-empty-text">AI content: {overview.aiContent.length} recent records. Certificates and reports remain available through their audited services.</p></article></div></> : <article className="admin-empty"><p className="card-kicker">ADMIN CONTROL PLANE</p><h2>Loading platform data...</h2></article>}</section>;
+  return <section className="content"><Header eyebrow="MARICS administration" title={`Welcome, ${displayName.split(/\s+/)[0] || 'admin'}.`} detail="Manage platform users, tenants, training content, languages, and reports from one protected control plane." />{message && overview && <div className="auth-message" role="alert">{message}</div>}<div className="admin-grid"><article className="admin-card"><span>USERS</span><strong>{counts?.users ?? '—'}</strong><p>Profiles in the platform.</p></article><article className="admin-card"><span>ORGANIZATIONS</span><strong>{counts?.organizations ?? '—'}</strong><p>Tenant workspaces.</p></article><article className="admin-card"><span>MODULES</span><strong>{counts ? `${counts.publishedModules} / ${counts.modules}` : '—'}</strong><p>Published training modules.</p></article></div>{overview ? <><div className="admin-columns"><article className="admin-panel"><p className="card-kicker">RECENT USERS</p><div className="admin-list">{overview.users.length ? overview.users.map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} &#183; {user.language}</span></div>) : <p className="admin-empty-text">No users found.</p>}</div></article><article className="admin-panel"><p className="card-kicker">ORGANIZATIONS</p><div className="admin-list">{overview.organizations.length ? overview.organizations.map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>Tenant workspace</span></div>) : <p className="admin-empty-text">No organizations found.</p>}</div></article></div><div className="admin-columns"><article className="admin-panel"><p className="card-kicker">MODULE MANAGEMENT</p><form className="admin-form" onSubmit={createModule}><input value={moduleSlug} onChange={(event) => setModuleSlug(event.target.value)} placeholder="module-slug" required /><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} placeholder="Module title" required /><input value={moduleDescription} onChange={(event) => setModuleDescription(event.target.value)} placeholder="Description" required /><button className="primary">Add module <b>&#8594;</b></button></form><div className="admin-list">{overview.modules.map((module) => <div className="admin-row" key={module.id}><strong>{module.title.en ?? module.slug}</strong><button className="text-button" onClick={() => toggleModule(module.id, !module.published)}>{module.published ? 'Unpublish' : 'Publish'}</button></div>)}</div></article><article className="admin-panel"><p className="card-kicker">PLATFORM SETTINGS</p><label className="org-label">Supported languages<select multiple value={overview.languages} onChange={updateLanguages}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label><p className="admin-empty-text">AI content: {overview.aiContent.length} recent records. Certificates and reports remain available through their audited services.</p></article></div></> : loading ? <article className="admin-empty" role="status"><p className="card-kicker">ADMIN CONTROL PLANE</p><h2>Loading platform data...</h2></article> : <article className="admin-empty"><p className="card-kicker">ADMIN CONTROL PLANE</p><h2>Platform data could not be loaded.</h2><p className="page-error" role="alert">{message ?? 'Admin dashboard could not be loaded.'}</p><button className="text-button" onClick={() => void loadOverview()}>Retry dashboard <b>&#8594;</b></button></article>}</section>;
 }
 
 function NavIcon({ name }: { name: string }) {
@@ -512,7 +551,10 @@ function roleLabel(role: AppRole) {
 function AdminSecondaryView({ view, session }: { view: View; session: Session }) {
   const [query, setQuery] = useState('');
   const [records, setRecords] = useState<unknown[]>([]);
+  const [recordsView, setRecordsView] = useState<View | null>(null);
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const requestId = useRef(0);
   const [scenarioModuleId, setScenarioModuleId] = useState('');
   const [scenarioSlug, setScenarioSlug] = useState('');
   const [scenarioTitle, setScenarioTitle] = useState('');
@@ -522,20 +564,35 @@ function AdminSecondaryView({ view, session }: { view: View; session: Session })
   const [correctOption, setCorrectOption] = useState('0');
   const [feedback, setFeedback] = useState('');
   const load = async () => {
+    const currentRequest = ++requestId.current;
     setMessage(null);
+    setLoading(true);
+    setRecordsView(null);
+    setRecords([]);
     try {
-      if (view === 'users') setRecords(await searchAdminUsers(session.access_token, query));
-      else if (view === 'organization') setRecords(await searchAdminOrganizations(session.access_token, query));
-      else if (view === 'modules') setRecords((await getAdminTrainingCatalog(session.access_token)).modules);
-      else if (view === 'reports') setRecords((await getAdminAnalytics(session.access_token)).categoryWeakness);
-      else if (view === 'settings') setRecords(await getAdminAuditLog(session.access_token));
-      else setRecords([]);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Admin data could not be loaded.'); }
+      let nextRecords: unknown[] = [];
+      if (view === 'users') nextRecords = await searchAdminUsers(session.access_token, query);
+      else if (view === 'organization') nextRecords = await searchAdminOrganizations(session.access_token, query);
+      else if (view === 'modules') nextRecords = (await getAdminTrainingCatalog(session.access_token)).modules;
+      else if (view === 'reports') nextRecords = (await getAdminAnalytics(session.access_token)).categoryWeakness;
+      else if (view === 'settings') nextRecords = await getAdminAuditLog(session.access_token);
+      if (currentRequest === requestId.current) {
+        setRecords(nextRecords);
+        setRecordsView(view);
+      }
+    } catch (error) {
+      if (currentRequest === requestId.current) {
+        setRecordsView(view);
+        setMessage(error instanceof Error ? error.message : 'Admin data could not be loaded.');
+      }
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
+    }
   };
   useEffect(() => { void load(); }, [view, session.access_token]);
   const updateRole = async (userId: string, role: string) => { try { await updateAdminUserRole(session.access_token, userId, role); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Role could not be updated.'); } };
   const toggleSuspension = async (user: { id: string; suspended: boolean }) => { try { await updateAdminUserSuspension(session.access_token, user.id, !user.suspended); await load(); } catch (error) { setMessage(error instanceof Error ? error.message : 'Account state could not be updated.'); } };
-  if (String(view) === 'modules') return <section className="content"><Header eyebrow="MARICS administration / Training catalog" title="Training catalog" detail="Create, localize, edit, and publish the scenarios learners will practice." />{message && <div className="auth-message" role="alert">{message}</div>}<AdminScenarioEditor accessToken={session.access_token} modules={records as AdminTrainingModule[]} onMessage={setMessage} onModuleUpdated={() => { void load(); }} /></section>;
+  if (String(view) === 'modules') return <section className="content"><Header eyebrow="MARICS administration / Training catalog" title="Training catalog" detail="Create, localize, edit, and publish the scenarios learners will practice." />{message && <div className="auth-message" role="alert">{message}</div>}{loading && <p className="page-state" role="status">Loading training catalog...</p>}<Suspense fallback={<p className="page-state" role="status">Loading training editor...</p>}><AdminScenarioEditor accessToken={session.access_token} modules={recordsView === view ? records as AdminTrainingModule[] : []} onMessage={setMessage} onModuleUpdated={() => { void load(); }} /></Suspense></section>;
     const createScenario = async (event: FormEvent) => {
       event.preventDefault();
       try {
@@ -546,7 +603,8 @@ function AdminSecondaryView({ view, session }: { view: View; session: Session })
       } catch (error) { setMessage(error instanceof Error ? error.message : 'Scenario could not be created.'); }
     };
   const labels: Record<string, string> = { users: 'Users', organization: 'Organizations', modules: 'Training catalog', reports: 'Platform analytics', settings: 'Audit log' };
-  return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>).map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios · {module.published ? 'published' : 'draft'}{module.archived ? ' · archived' : ''}</span></div>)}</div></article>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ category: string; weakPercent: number; weakCount: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% weak ({item.weakCount})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}</section>;
+  const visibleRecords = recordsView === view ? records : [];
+  return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{loading && <p className="page-state" role="status">Loading {labels[view]?.toLowerCase() ?? 'admin data'}...</p>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(visibleRecords as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(visibleRecords as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <article className="admin-panel"><div className="admin-list">{(visibleRecords as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>).map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios · {module.published ? 'published' : 'draft'}{module.archived ? ' · archived' : ''}</span></div>)}</div></article>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(visibleRecords as Array<{ category: string; weakPercent: number; weakCount: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% weak ({item.weakCount})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(visibleRecords as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}</section>;
   const moduleRecords = records as Array<{ id: string; slug: string; scenarioCount: number; published: boolean; archived: boolean }>;
   return <section className="content"><Header eyebrow={`MARICS administration / ${labels[view] ?? view}`} title={labels[view] ?? view} detail="Every record is loaded through the authenticated, audited admin API." />{message && <div className="auth-message" role="alert">{message}</div>}{(view === 'users' || view === 'organization') && <form className="org-toolbar" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${view === 'users' ? 'users' : 'organizations'}`} /></label><button className="text-button">Search <b>&#8594;</b></button></form>}{view === 'users' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; role: string; suspended: boolean }>).map((user) => <div className="admin-row" key={user.id}><strong>{user.name}</strong><span>{user.role} {user.suspended ? '· suspended' : ''}</span><select value={user.role} onChange={(event) => void updateRole(user.id, event.target.value)}><option value="individual">Individual</option><option value="employee">Employee</option><option value="organization_admin">Org admin</option><option value="marics_admin">MARICS admin</option></select><button className="text-button" onClick={() => void toggleSuspension(user)}>{user.suspended ? 'Reactivate' : 'Suspend'}</button></div>)}</div></article>}{view === 'organization' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; name: string; employeeCount: number; suspended: boolean }>).map((organization) => <div className="admin-row" key={organization.id}><strong>{organization.name}</strong><span>{organization.employeeCount} employees {organization.suspended ? '· suspended' : ''}</span></div>)}</div></article>}{view === 'modules' && <><article className="admin-panel"><p className="card-kicker">CREATE SCENARIO</p><form className="admin-form" onSubmit={createScenario}><select value={scenarioModuleId} onChange={(event) => setScenarioModuleId(event.target.value)} required><option value="">Choose a module</option>{moduleRecords.map((module) => <option key={module.id} value={module.id}>{module.slug}</option>)}</select><input value={scenarioSlug} onChange={(event) => setScenarioSlug(event.target.value)} placeholder="scenario-slug" required /><input value={scenarioTitle} onChange={(event) => setScenarioTitle(event.target.value)} placeholder="Scenario title" required /><input value={riskDimension} onChange={(event) => setRiskDimension(event.target.value)} placeholder="Risk dimension" required /><textarea value={scenarioText} onChange={(event) => setScenarioText(event.target.value)} placeholder="What situation should the learner decide?" required /><label>Option A<input value={optionText[0]} onChange={(event) => setOptionText([event.target.value, optionText[1], optionText[2]])} required /></label><label>Option B<input value={optionText[1]} onChange={(event) => setOptionText([optionText[0], event.target.value, optionText[2]])} required /></label><label>Option C<input value={optionText[2]} onChange={(event) => setOptionText([optionText[0], optionText[1], event.target.value])} required /></label><select value={correctOption} onChange={(event) => setCorrectOption(event.target.value)}><option value="0">Option A is correct</option><option value="1">Option B is correct</option><option value="2">Option C is correct</option></select><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Feedback shown after the answer" required /><button className="primary">Create scenario <b>&#8594;</b></button></form></article><article className="admin-panel"><div className="admin-list">{moduleRecords.map((module) => <div className="admin-row" key={module.id}><strong>{module.slug}</strong><span>{module.scenarioCount} scenarios {module.archived ? '· archived' : ''}</span><button className="text-button" onClick={() => void setAdminModulePublished(session.access_token, module.id, !module.published).then(load).catch((error) => setMessage(error instanceof Error ? error.message : 'Module could not be updated.'))}>{module.published ? 'Unpublish' : 'Publish'}</button></div>)}</div></article></>}{view === 'reports' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ category: string; weakCount: number; assessedUsers: number; weakPercent: number }>).map((item) => <div className="admin-row" key={item.category}><strong>{item.category}</strong><span>{item.weakPercent}% focus area ({item.weakCount}/{item.assessedUsers})</span></div>)}</div></article>}{view === 'settings' && <article className="admin-panel"><div className="admin-list">{(records as Array<{ id: string; action: string; targetType: string; createdAt: string }>).map((entry) => <div className="admin-row" key={entry.id}><strong>{entry.action}</strong><span>{entry.targetType} · {new Date(entry.createdAt).toLocaleString()}</span></div>)}</div></article>}</section>;
 }
@@ -615,23 +673,49 @@ function OrganizationDashboard({ session, organizations }: { session: Session; o
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getOrganizationDashboard>> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
-    if (!organizationId) return;
-    void getOrganizationDashboard(session.access_token, organizationId).then(setDashboard).catch((error) => setMessage(error instanceof Error ? error.message : 'Dashboard could not be loaded.'));
-  }, [organizationId, session.access_token]);
-  return <section className="content"><Header eyebrow="Organizations / dashboard" title={dashboard?.organization.name ?? 'Organization dashboard'} detail="Track aggregate workforce readiness and team progress." />{message && <div className="auth-message" role="alert">{message}</div>}{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label></div>{dashboard ? <div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div> : <div className="auth-message">Loading dashboard data...</div>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2><p>The dashboard becomes available after the first workspace is created.</p></article>}</section>;
+    if (!organizationId) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setDashboard(null);
+    setMessage(null);
+    void getOrganizationDashboard(session.access_token, organizationId)
+      .then((result) => { if (active) setDashboard(result); })
+      .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'Dashboard could not be loaded.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [organizationId, reload, session.access_token]);
+  return <section className="content"><Header eyebrow="Organizations / dashboard" title={dashboard?.organization.name ?? 'Organization dashboard'} detail="Track aggregate workforce readiness and team progress." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label></div>{loading && <p className="page-state" role="status">Loading dashboard data...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry dashboard</button></div>}{dashboard && <div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2><p>The dashboard becomes available after the first workspace is created.</p></article>}</section>;
 }
 
 function OrganizationReports({ session, organizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }> }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [report, setReport] = useState<unknown>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
   useEffect(() => {
-    if (!organizationId) return;
-    void createOrganizationReport(session.access_token, organizationId).then(setReport).catch((error) => setMessage(error instanceof Error ? error.message : 'Report could not be loaded.'));
-  }, [organizationId, session.access_token]);
+    if (!organizationId) {
+      setLoading(false);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setReport(null);
+    setMessage(null);
+    void createOrganizationReport(session.access_token, organizationId)
+      .then((result) => { if (active) setReport(result); })
+      .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'Report could not be loaded.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [organizationId, reload, session.access_token]);
   const download = async () => { if (!organizationId) return; try { const csv = await createOrganizationCsvReport(session.access_token, organizationId); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'marics-organization-report.csv'; link.click(); URL.revokeObjectURL(url); } catch (error) { setMessage(error instanceof Error ? error.message : 'CSV report could not be generated.'); } };
-  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review aggregate organization reporting and export the current CSV." />{message && <div className="auth-message" role="alert">{message}</div>}{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void download()}>Download CSV <b>&#8595;</b></button></div><article className="role-empty"><p className="card-kicker">AGGREGATE REPORT</p><h2>{report ? 'Report ready' : 'Loading report'}</h2><p>{report ? 'The report is generated from organization-level participation data.' : 'Preparing the current organization report.'}</p></article></> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
+  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review aggregate organization reporting and export the current CSV." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void download()}>Download CSV <b>&#8595;</b></button></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{report && <article className="role-empty"><p className="card-kicker">AGGREGATE REPORT</p><h2>Report ready</h2><p>The report is generated from organization-level participation data.</p></article>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
 }
 
 function OrganizationSettings({ session, organizations, setOrganizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; setOrganizations: Dispatch<SetStateAction<Array<{ id: string; name: string; isAdmin: boolean }>>> }) {
@@ -659,7 +743,7 @@ function Overview({ displayName, onboardingComplete, riskProfile, trainingSummar
   return <section className="content"><Header eyebrow="Saturday, 19 September 2026" title={`Good morning, ${firstName}.`} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." /><div className="overview-grid"><article className="awareness-card"><div><p className="card-kicker">OVERALL AWARENESS</p><div className="score-line"><strong>{onboardingComplete ? 'Profile ready' : 'Not assessed'}</strong><span>{onboardingComplete && riskProfile ? `Strongest: ${riskProfile.strongest_dimension}` : 'Complete onboarding first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '&#8212;'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Complete your baseline'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten scenario-style questions map your strongest habits and focus areas.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start assessment'} <b>&#8594;</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAK SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'weak').length}</strong></article><article><span>STRONG SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'strong').length}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
 }
 
-function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, onAskWhy, onAnswer, onSubmit }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void }) {
+function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, whyQuestionOpen, whyQuestionText, onWhyQuestionTextChange, onWhyQuestionOpenChange, onAskWhy, onAnswer, onSubmit }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; whyQuestionOpen: boolean; whyQuestionText: string; onWhyQuestionTextChange: (question: string) => void; onWhyQuestionOpenChange: (open: boolean) => void; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void }) {
   const selectedModule = modules.find((module) => module.slug === selectedModuleSlug) ?? modules[0];
   const progress = summary.modules.find((module) => module.slug === selectedModule?.slug);
   const materialLanguage = selectedModule?.learningMaterial?.[language] ? language : 'en';
@@ -714,7 +798,7 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
           {result.moduleCompleted && <p className="training-certificate-note">Your completion certificate is ready in Certificates.</p>}
           <strong>{result.isCorrect ? 'Correct — and here is why it matters' : 'Not quite — learn the safer response'}</strong>
           <p>{result.feedback}</p>
-          <div className="feedback-explanation-row"><p className="feedback-explanation"><em>Why this is the risk:</em> {result.explanation}</p><div className="ask-why-controls"><button className="ask-why-button" type="button" disabled={whyLoading || Boolean(whyExplanation)} onClick={onAskWhy}>{whyLoading ? 'Asking...' : whyExplanation ? 'Answered' : 'Ask why'}{!whyExplanation && <span>About this answer</span>}</button>{whyError && <p className="ask-why-error" role="alert">{whyError}</p>}</div></div>
+          <div className="feedback-explanation-row"><p className="feedback-explanation"><em>Why this is the risk:</em> {result.explanation}</p><div className="ask-why-controls">{!whyExplanation && <><button className="ask-why-button" type="button" disabled={whyLoading} aria-expanded={whyQuestionOpen} onClick={() => onWhyQuestionOpenChange(!whyQuestionOpen)}>{whyQuestionOpen ? 'Close question' : 'Ask about this answer'}<span>One focused follow-up for this scenario</span></button>{whyQuestionOpen && <form className="ask-why-form" onSubmit={(event) => { event.preventDefault(); onAskWhy(); }}><label htmlFor="scenario-followup-question">Your question</label><textarea id="scenario-followup-question" value={whyQuestionText} onChange={(event) => onWhyQuestionTextChange(event.target.value)} maxLength={500} rows={3} placeholder="What would happen if I clicked the link?" required disabled={whyLoading} /><button className="text-button" type="submit" disabled={whyLoading || !whyQuestionText.trim()}>{whyLoading ? 'Getting an explanation...' : 'Send question'} <b>&#8594;</b></button></form>}</>}{whyError && <p className="ask-why-error" role="alert">{whyError}</p>}</div></div>
           {whyExplanation && <p className="ask-why-answer" role="status"><strong>More context:</strong> {whyExplanation}</p>}
           {!result.isCorrect && <p className="feedback-correct">The strongest response is option {result.correctOptionKey}.</p>}
           <span>Manipulation signals: {activeScenario.riskDimensions.join(' + ')}</span>
@@ -756,11 +840,6 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: bo
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppErrorBoundary><App /></AppErrorBoundary></StrictMode>);
-
-
-
-
-
 
 
 

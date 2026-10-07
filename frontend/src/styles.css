@@ -96,6 +96,9 @@ button:focus-visible { outline: 3px solid #d25d38; outline-offset: 3px; }
 .ask-why-button { padding: 8px 10px; border: 1px solid #c5d2c7; color: #52675c; background: transparent; text-align: left; font-size: 11px; cursor: pointer; }
 .ask-why-button span { display: block; margin-top: 3px; color: #87958c; font-size: 9px; }
 .ask-why-button:disabled { cursor: not-allowed; opacity: .75; }
+.ask-why-form { width: min(340px, 100%); display: grid; gap: 7px; color: #52675c; font-size: 11px; }
+.ask-why-form textarea { width: 100%; min-height: 72px; resize: vertical; padding: 9px 10px; border: 1px solid #c5d2c7; color: #253a2e; background: #fff; font: inherit; line-height: 1.45; }
+.ask-why-form .text-button { justify-self: start; }
 .ask-why-answer { margin: 14px 0 0 !important; padding: 13px 15px; border-left: 2px solid #52836b; color: #41624e !important; background: #fff; font-size: 13px !important; line-height: 1.6 !important; }
 .ask-why-answer strong { color: #294d39; }
 .ask-why-error { margin: 0; color: #a53d2d; font-size: 11px; }
@@ -103,7 +106,7 @@ button:focus-visible { outline: 3px solid #d25d38; outline-offset: 3px; }
 @keyframes reward-pop { from { opacity: 0; transform: scale(.55) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
 @media (prefers-reduced-motion: reduce) { .training-reward-mark { animation: none; }.training-progress-track i { transition: none; } }
 @media (max-width: 760px) { .training-learning-grid { grid-template-columns: 1fr; gap: 12px; }.training-learning-grid article { padding-top: 12px; }.training-module-progress { grid-template-columns: 1fr; }.training-module-progress > .training-progress-track { grid-column: auto; }.training-module-card { min-height: 125px; } }
-@media (max-width: 620px) { .training-catalog { grid-template-columns: 1fr; }.training-module-card { min-height: 110px; }.training-reward { align-items: start; flex-wrap: wrap; }.training-streak { margin-left: auto; }.feedback-explanation-row { flex-direction: column; }.ask-why-controls { width: 100%; }.ask-why-button { align-self: flex-start; } }
+@media (max-width: 620px) { .training-catalog { grid-template-columns: 1fr; }.training-module-card { min-height: 110px; }.training-reward { align-items: start; flex-wrap: wrap; }.training-streak { margin-left: auto; }.feedback-explanation-row { flex-direction: column; }.ask-why-controls { width: 100%; }.ask-why-button { align-self: flex-start; }.ask-why-form { width: 100%; } }
 .settings-grid { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-form { margin-top: 18px; display: grid; gap: 14px; }
 .settings-form label { display: grid; gap: 7px; color: #52675c; font-size: 12px; }
