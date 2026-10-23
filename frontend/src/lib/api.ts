@@ -142,6 +142,23 @@ export async function getUserCertificates(accessToken: string) {
   return payload.certificates;
 }
 
+export type CertificationQuestion = { scenarioId: string; content: Record<string, { title?: string; scenario?: string }>; options: Array<{ optionKey: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
+export type CertificationAssessment = { assessmentId: string; expiresAt: string; timeLimitMinutes: number; passPercent: number; questions: CertificationQuestion[] };
+
+export async function startCertificationAssessment(accessToken: string) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certification-assessment/start`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } });
+  const payload = await response.json().catch(() => ({})) as CertificationAssessment & { message?: string };
+  if (!response.ok) throw new Error(payload.message ?? 'Certification assessment could not be started');
+  return payload;
+}
+
+export async function submitCertificationAssessment(accessToken: string, assessmentId: string, answers: Array<{ scenarioId: string; optionKey: 'A' | 'B' | 'C' | 'D' }>) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certification-assessment/submit`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ assessmentId, answers }) });
+  const payload = await response.json().catch(() => ({})) as { score?: number; passed?: boolean; message?: string };
+  if (!response.ok) throw new Error(payload.message ?? 'Certification assessment could not be submitted');
+  return payload as { score: number; passed: boolean; passPercent: number };
+}
+
 export type VerifiedCertificate = { verificationId: string; issuedAt: string; recipient: string; module: { slug: string; title: Record<string, string> } | null };
 
 export async function verifyCertificate(verificationId: string) {

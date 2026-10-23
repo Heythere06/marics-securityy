@@ -1,7 +1,7 @@
 import { Component, StrictMode, Suspense, lazy, useEffect, useRef, useState, type ChangeEvent, type Dispatch, type ErrorInfo, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session } from '@supabase/supabase-js';
-import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getScenarioWhy, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, removeOrganizationMember, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, submitAssessment as saveAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, validateInvitation, verifyCertificate, type AdminOverview, type AdminTrainingModule, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
+import { acceptOrganizationInvitation, createAdminModule, createAdminScenario, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, getAdminAnalytics, getAdminAuditLog, getAdminOverview, getAdminTrainingCatalog, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getScenarioWhy, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, removeOrganizationMember, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, startCertificationAssessment, submitAssessment as saveAssessment, submitCertificationAssessment, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, validateInvitation, verifyCertificate, type AdminOverview, type AdminTrainingModule, type CertificationAssessment, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
 import { supabase } from './lib/supabase';
 import { getTranslations, type Language } from './i18n';
 import './styles.css';
@@ -201,7 +201,7 @@ function App() {
       const profile = await saveAssessment(session.access_token, nextAnswers);
       setRiskProfile(profile);
       setRetakingAssessment(false);
-      setView(retakingAssessment ? 'assessment' : 'overview');
+      setView('assessment');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'We could not save your assessment.');
     }
@@ -516,6 +516,9 @@ function CertificatesView({ accessToken, displayName, language }: { accessToken:
   const [certificates, setCertificates] = useState<UserCertificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [certification, setCertification] = useState<CertificationAssessment | null>(null);
+  const [certificationResult, setCertificationResult] = useState<{ score: number; passed: boolean; passPercent: number } | null>(null);
+  const [certificationError, setCertificationError] = useState<string | null>(null);
   const load = () => {
     setLoading(true); setError(null);
     getUserCertificates(accessToken).then(setCertificates).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Certificates could not be loaded.')).finally(() => setLoading(false));
@@ -526,9 +529,52 @@ function CertificatesView({ accessToken, displayName, language }: { accessToken:
     <Header eyebrow="PERSONAL SECURITY / ACHIEVEMENTS" title="Certificates" detail="Your verified records of completed security awareness training." />
     {loading && <p className="page-state">Loading certificates...</p>}
     {error && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" onClick={load}>Retry</button></div>}
+    {!loading && error?.includes('30-question') && !certification && !certificationResult && <article className="certificate-empty"><p className="card-kicker">CERTIFICATION GATE</p><h2>Pass the final assessment to unlock certificates.</h2><p>Complete all training modules, then pass 30 timed multiple-choice questions with at least 80%.</p><button className="primary action-button" onClick={() => { setCertificationError(null); startCertificationAssessment(accessToken).then(setCertification).catch((startError) => setCertificationError(startError instanceof Error ? startError.message : 'Certification assessment could not be started.')); }}>Start certification assessment <b>&#8594;</b></button>{certificationError && <p className="page-error" role="alert">{certificationError}</p>}</article>}
+    {certification && <CertificationAssessmentView accessToken={accessToken} language={language} assessment={certification} onComplete={(result) => { setCertificationResult(result); setCertification(null); setError(null); load(); }} />}
+    {certificationResult && <article className="certificate-empty"><p className="card-kicker">ASSESSMENT RESULT</p><h2>{certificationResult.passed ? 'Certification unlocked.' : 'Assessment not passed.'}</h2><p>You scored {certificationResult.score}%. {certificationResult.passed ? 'Your certificates are now available.' : 'You need at least 80% to continue.'}</p>{!certificationResult.passed && <button className="primary action-button" onClick={() => { setCertificationResult(null); setError('Pass the 30-question certification assessment before accessing certificates.'); }}>Try again <b>&#8594;</b></button>}</article>}
     {!loading && !error && certificates.length === 0 && <article className="certificate-empty"><p className="card-kicker">NEXT MILESTONE</p><h2>Your first certificate is earned by practice.</h2><p>Complete every distinct scenario in a published training module. Your certificate will appear here automatically.</p></article>}
     {!loading && certificates.length > 0 && <div className="certificate-list">{certificates.map((certificate) => <article className="certificate-card" key={certificate.id}><div className="certificate-mark">M</div><p className="card-kicker">MARICS / CERTIFICATE OF COMPLETION</p><h2>{certificate.module?.title[language] ?? certificate.module?.title.en ?? certificate.module?.slug ?? 'Security awareness training'}</h2><p className="certificate-recipient">Awarded to <strong>{displayName}</strong></p><div className="certificate-details"><span>Issued {new Date(certificate.issued_at).toLocaleDateString()}</span><span>Verification ID {certificate.verification_id}</span></div><a className="text-button" href={`/verify/${certificate.verification_id}`} target="_blank" rel="noreferrer">View printable certificate <b>&#8599;</b></a></article>)}</div>}
   </section>;
+}
+
+function CertificationAssessmentView({ accessToken, language, assessment, onComplete }: { accessToken: string; language: Language; assessment: CertificationAssessment; onComplete: (result: { score: number; passed: boolean; passPercent: number }) => void }) {
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<Array<{ scenarioId: string; optionKey: 'A' | 'B' | 'C' | 'D' }>>([]);
+  const [selected, setSelected] = useState<'A' | 'B' | 'C' | 'D' | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(Math.max(0, Math.floor((Date.parse(assessment.expiresAt) - Date.now()) / 1000)));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const question = assessment.questions[index];
+  useEffect(() => {
+    const timer = window.setInterval(() => setSecondsLeft(Math.max(0, Math.floor((Date.parse(assessment.expiresAt) - Date.now()) / 1000))), 1000);
+    return () => window.clearInterval(timer);
+  }, [assessment.expiresAt]);
+  useEffect(() => {
+    if (secondsLeft === 0 && !submitting) setError('Time is up. Submit is no longer available; start a new assessment.');
+  }, [secondsLeft, submitting]);
+  const submit = async () => {
+    if (!selected) return;
+    const next = [...answers, { scenarioId: question.scenarioId, optionKey: selected }];
+    setAnswers(next);
+    setSelected(null);
+    if (index < assessment.questions.length - 1) {
+      setIndex(index + 1);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      onComplete(await submitCertificationAssessment(accessToken, assessment.assessmentId, next));
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Certification assessment could not be submitted.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const content = question.content[language] ?? question.content.en ?? Object.values(question.content)[0];
+  const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
+  const minutes = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+  const seconds = (secondsLeft % 60).toString().padStart(2, '0');
+  return <article className="question-card certification-assessment"><p className="card-kicker">FINAL CERTIFICATION ASSESSMENT</p><div className="assessment-progress"><span>Question {index + 1} of {assessment.questions.length}</span><strong>Time left {minutes}:{seconds}</strong><div><i style={{ width: `${((index + 1) / assessment.questions.length) * 100}%` }} /></div></div><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{question.options.map((option) => <button key={option.optionKey} className={selected === option.optionKey ? 'option selected' : 'option'} onClick={() => setSelected(option.optionKey)} disabled={submitting || secondsLeft === 0}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div>{error && <p className="page-error" role="alert">{error}</p>}<button className="primary action-button" disabled={!selected || submitting || secondsLeft === 0} onClick={() => void submit()}>{submitting ? 'Submitting...' : index === assessment.questions.length - 1 ? 'Finish assessment' : 'Next question'} <b>&#8594;</b></button></article>;
 }
 
 function CertificateVerificationPage({ verificationId }: { verificationId: string }) {
@@ -840,9 +886,6 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { hasError: bo
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><AppErrorBoundary><App /></AppErrorBoundary></StrictMode>);
-
-
-
 
 
 

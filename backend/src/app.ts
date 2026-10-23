@@ -44,6 +44,7 @@ import {
 } from './modules/admin.js';
 import { getOrganizationReportCsv } from './modules/organizations.js';
 import { ensureUserCertificates, listUserCertificates, verifyCertificate } from './modules/certificates.js';
+import { certificationSubmissionSchema, hasPassedCertification, startCertificationAssessment, submitCertificationAssessment } from './modules/certification.js';
 
 type AuthenticatedRequest = { userId?: string; accessToken?: string };
 
@@ -704,6 +705,7 @@ export function buildApp() {
     try {
       const auth = await requireUser(request);
       const client = createAuthenticatedClient(auth.accessToken!);
+      if (!(await hasPassedCertification(client, auth.userId!))) return reply.code(403).send({ error: 'CERTIFICATION_REQUIRED', message: 'Pass the 30-question certification assessment before accessing certificates.' });
       await ensureUserCertificates(client, auth.userId!);
       const certificates = await listUserCertificates(client, auth.userId!);
       return reply.send({ certificates });
@@ -711,6 +713,35 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your certificates.' });
       request.log.error(error, 'Certificate listing failed');
       return reply.code(500).send({ error: 'CERTIFICATES_UNAVAILABLE', message: 'We could not load your certificates.' });
+    }
+  });
+
+  app.post('/api/certification-assessment/start', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const { data } = await createAuthenticatedClient(auth.accessToken!).auth.getUser(auth.accessToken);
+      return reply.send(await startCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to start the certification assessment.' });
+      if (error instanceof Error && error.message === 'TRAINING_REQUIRED') return reply.code(403).send({ error: 'TRAINING_REQUIRED', message: 'Complete every published training module before starting the certification assessment.' });
+      if (error instanceof Error && error.message === 'CERTIFICATION_QUESTION_POOL_TOO_SMALL') return reply.code(503).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'The certification question bank is not ready yet.' });
+      request.log.error(error, 'Certification assessment start failed');
+      return reply.code(500).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'We could not start the certification assessment.' });
+    }
+  });
+
+  app.post('/api/certification-assessment/submit', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const input = certificationSubmissionSchema.parse(request.body);
+      const { data } = await createAuthenticatedClient(auth.accessToken!).auth.getUser(auth.accessToken);
+      return reply.send(await submitCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!, input));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to submit the certification assessment.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CERTIFICATION', message: 'Answer all 30 certification questions.' });
+      if (error instanceof Error && error.message === 'CERTIFICATION_EXPIRED') return reply.code(400).send({ error: 'CERTIFICATION_EXPIRED', message: 'Your 20-minute assessment expired. Please start again.' });
+      request.log.error(error, 'Certification assessment submission failed');
+      return reply.code(500).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'We could not save your certification assessment.' });
     }
   });
 

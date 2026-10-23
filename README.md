@@ -32,9 +32,9 @@ docs/      architecture, API, security, and delivery decisions
 
 The frontend runs on `http://localhost:5173` and the API on `http://localhost:4000`. The API health check is `GET /health`.
 
-The current repository includes database-backed onboarding assessment, risk profiles, training, progress, recommendations, organizations, team-risk reports, audited admin controls, and a server-side AI adapter. AI generation remains a later product phase and is not yet a complete user-facing workflow.
+The current repository includes database-backed onboarding assessment, risk profiles, training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, and a server-side AI adapter. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes. AI generation remains a later product phase and is not yet a complete user-facing workflow.
 
-Supabase migrations must be applied in filename order through `202610070001_ai_scenario_followup_limits.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, and bounded AI follow-up flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
+Supabase migrations must be applied in filename order through `202610230001_certification_assessment.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, bounded AI follow-up, and certification flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
 
 ## Project Documentation
 
