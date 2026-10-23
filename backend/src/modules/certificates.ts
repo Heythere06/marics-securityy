@@ -9,7 +9,7 @@ export function hasAttemptedEveryScenario(scenarioIds: string[], attemptedScenar
 export async function awardModuleCertificate(userClient: SupabaseClient, userId: string, moduleId: string) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const service = createServiceClient();
-  const { data: module, error: moduleError } = await service.from('training_modules').select('id, scenarios(id)').eq('id', moduleId).eq('is_published', true).maybeSingle();
+  const { data: module, error: moduleError } = await service.from('training_modules').select('id, scenarios(id)').eq('id', moduleId).eq('is_published', true).eq('is_assessment', false).maybeSingle();
   if (moduleError) throw moduleError;
   const scenarioIds = Array.isArray(module?.scenarios) ? module.scenarios.map((scenario) => scenario.id) : [];
   if (!scenarioIds.length) return null;

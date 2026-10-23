@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTrainingSummary, listPublishedModules, splitOptionFeedback, trainingAnswerSchema } from './training.js';
+import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, splitOptionFeedback, trainingAnswerSchema } from './training.js';
 import { hasAttemptedEveryScenario } from './certificates.js';
 import { adminModuleUpdateSchema } from './admin.js';
 import { scenarioWhySchema } from './ai.js';
@@ -79,6 +79,52 @@ describe('localized module learning material', () => {
   });
 });
 
+describe('learner training scenario access', () => {
+  it('returns published learner scenarios without exposing assessment module fields', async () => {
+    const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const calls: string[] = [];
+    const moduleTitle = { en: 'Phishing' };
+    const scenario = {
+      id: 'scenario-a',
+      slug: 'phishing-a',
+      content: { en: { title: 'A message', scenario: 'Review this message.' } },
+      risk_dimensions: ['Urgency'],
+      training_modules: { slug: 'phishing', title: moduleTitle, is_published: true, is_assessment: false },
+      scenario_options: [],
+    };
+    try {
+      const result = await getScenario({ from: () => createQuery(scenario, calls) } as never, 'phishing-a');
+
+      expect(result.module).toEqual({ slug: 'phishing', title: moduleTitle });
+      expect(calls).toContain('eq:training_modules.is_published:true');
+      expect(calls).toContain('eq:training_modules.is_assessment:false');
+    } finally {
+      if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+    }
+  });
+
+  it('excludes assessment modules from scenario lookup and answer submission', async () => {
+    const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const lookupCalls: string[] = [];
+    const lookupClient = { from: () => createQuery(null, lookupCalls) };
+    try {
+      await expect(getScenario(lookupClient as never, 'urgency')).rejects.toThrow('SCENARIO_UNAVAILABLE');
+      expect(lookupCalls).toContain('eq:training_modules.is_published:true');
+      expect(lookupCalls).toContain('eq:training_modules.is_assessment:false');
+
+      const answerCalls: string[] = [];
+      const answerClient = { from: () => createQuery(null, answerCalls) };
+      await expect(recordTrainingAnswer(answerClient as never, {} as never, 'urgency', { optionKey: 'A' })).rejects.toThrow('SCENARIO_UNAVAILABLE');
+      expect(answerCalls).toContain('eq:training_modules.is_published:true');
+      expect(answerCalls).toContain('eq:training_modules.is_assessment:false');
+    } finally {
+      if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+    }
+  });
+});
+
 describe('question-specific why context', () => {
   const question = {
     moduleTitle: 'Phishing',
@@ -129,6 +175,29 @@ describe('training progress isolation', () => {
     expect(summary.modules[0].scenariosAttempted).toBe(1);
     expect(calls).toContain('eq:user_id:user-a');
     expect(calls.filter((call) => call === 'eq:user_id:user-a')).toHaveLength(3);
+  });
+
+  it('does not complete a module until every distinct scenario has been attempted', async () => {
+    const scenarios = Array.from({ length: 6 }, (_, index) => ({
+      id: `scenario-${index + 1}`,
+      risk_dimensions: ['Urgency'],
+    }));
+    const client = {
+      from(table: string) {
+        if (table === 'training_attempts') return createQuery([{ scenario_id: 'scenario-1', is_correct: true, created_at: '2026-09-21T10:00:00Z' }], []);
+        if (table === 'training_modules') return createQuery([{ id: 'module-a', slug: 'module-a', title: { en: 'Module A' }, scenarios }], []);
+        if (table === 'training_progress') return createQuery([{ module_id: 'module-a', scenarios_attempted: 1, scenarios_correct: 1, completed_at: null }], []);
+        return createQuery(null, []);
+      },
+    };
+
+    const summary = await getTrainingSummary(client as never, 'user-a');
+
+    expect(summary.modules[0]).toMatchObject({
+      scenarioCount: 6,
+      scenariosAttempted: 1,
+      completed: false,
+    });
   });
 });
 

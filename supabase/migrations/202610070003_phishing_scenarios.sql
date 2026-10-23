@@ -4,7 +4,7 @@
 DO $$
 declare
   module_id uuid;
-  scenario_id uuid;
+  v_scenario_id uuid;
   scenario_record record;
 begin
   select id into module_id
@@ -91,34 +91,130 @@ begin
         "risk_dimensions": ["Urgency", "Account restriction", "Untrusted link"]
       }
     ]') as scenario(slug text, title text, scenario text, risk_dimensions jsonb)
+
   loop
-    insert into public.scenarios (module_id, slug, content, risk_dimensions)
+
+    insert into public.scenarios (
+      module_id,
+      slug,
+      content,
+      risk_dimensions
+    )
     values (
       module_id,
       scenario_record.slug,
-      jsonb_build_object('en', jsonb_build_object('title', scenario_record.title, 'scenario', scenario_record.scenario)),
-      (select array_agg(value order by ord)
-       from jsonb_array_elements_text(scenario_record.risk_dimensions) with ordinality as element(value, ord))
+      jsonb_build_object(
+        'en',
+        jsonb_build_object(
+          'title', scenario_record.title,
+          'scenario', scenario_record.scenario
+        )
+      ),
+      array(
+        select value
+        from jsonb_array_elements_text(
+          scenario_record.risk_dimensions
+        ) with ordinality as element(value, ord)
+        order by ord
+      )
     )
-    on conflict (slug) do update
+    on conflict (slug) where slug is not null
+    do update
       set content = excluded.content,
           risk_dimensions = excluded.risk_dimensions
-    returning id into scenario_id;
+    returning id into v_scenario_id;
 
-    insert into public.scenario_options (scenario_id, option_key, content, is_correct, feedback)
+    insert into public.scenario_options (
+      scenario_id,
+      option_key,
+      content,
+      is_correct,
+      feedback
+    )
     values
-      (scenario_id, 'A', jsonb_build_object('en', 'Verify the message through a known company channel before opening the link.'), true,
-       jsonb_build_object('en', jsonb_build_object('choice', 'Verify independently before acting.', 'explanation', 'The message uses urgency, an unexpected reward or payment, and a link that does not match a known official channel.'))),
-      (scenario_id, 'B', jsonb_build_object('en', 'Click the link because the company name and message are familiar.'), false,
-       jsonb_build_object('en', jsonb_build_object('choice', 'A familiar company name does not prove the message is genuine.', 'explanation', 'Scammers can spoof sender names and use trusted-looking wording. A message link should never be the first verification channel.'))),
-      (scenario_id, 'C', jsonb_build_object('en', 'Enter the requested bank or identity details immediately.'), false,
-       jsonb_build_object('en', jsonb_build_object('choice', 'Do not disclose confidential information in response to an unverified message.', 'explanation', 'Banking credentials, PINs, OTPs, and account details can be used to compromise an account.'))),
-      (scenario_id, 'D', jsonb_build_object('en', 'Forward the message to friends to confirm it is real.'), false,
-       jsonb_build_object('en', jsonb_build_object('choice', 'Forwarding can spread the message and expose confidential information.', 'explanation', 'Verify through a trusted number, official app, or known website instead of forwarding the message or its link.')))
-    on conflict (scenario_id, option_key) do update
+
+      (
+        v_scenario_id,
+        'A',
+        jsonb_build_object(
+          'en',
+          'Verify the message through a known company channel before opening the link.'
+        ),
+        true,
+        jsonb_build_object(
+          'en',
+          jsonb_build_object(
+            'choice',
+            'Verify independently before acting.',
+            'explanation',
+            'The message uses urgency, an unexpected reward or payment, and a link that does not match a known official channel.'
+          )
+        )
+      ),
+
+      (
+        v_scenario_id,
+        'B',
+        jsonb_build_object(
+          'en',
+          'Click the link because the company name and message are familiar.'
+        ),
+        false,
+        jsonb_build_object(
+          'en',
+          jsonb_build_object(
+            'choice',
+            'A familiar company name does not prove the message is genuine.',
+            'explanation',
+            'Scammers can spoof sender names and use trusted-looking wording. A message link should never be the first verification channel.'
+          )
+        )
+      ),
+
+      (
+        v_scenario_id,
+        'C',
+        jsonb_build_object(
+          'en',
+          'Enter the requested bank or identity details immediately.'
+        ),
+        false,
+        jsonb_build_object(
+          'en',
+          jsonb_build_object(
+            'choice',
+            'Do not disclose confidential information in response to an unverified message.',
+            'explanation',
+            'Banking credentials, PINs, OTPs, and account details can be used to compromise an account.'
+          )
+        )
+      ),
+
+      (
+        v_scenario_id,
+        'D',
+        jsonb_build_object(
+          'en',
+          'Forward the message to friends to confirm it is real.'
+        ),
+        false,
+        jsonb_build_object(
+          'en',
+          jsonb_build_object(
+            'choice',
+            'Forwarding can spread the message and expose confidential information.',
+            'explanation',
+            'Verify through a trusted number, official app, or known website instead of forwarding the message or its link.'
+          )
+        )
+      )
+
+    on conflict (scenario_id, option_key)
+    do update
       set content = excluded.content,
           is_correct = excluded.is_correct,
           feedback = excluded.feedback;
+
   end loop;
 end;
 $$;

@@ -37,3 +37,7 @@ Migration `202609190015_admin_scenarios.sql` adds protected admin scenario manag
 Migration `202610050001_training_learning_material.sql` adds English, Afrikaans, and Portuguese learning material to each training module, includes it in learner and admin catalogs, and requires all three learning sections before a module can be published.
 
 Migration `202610050002_sql_injection_scenarios.sql` completes the existing SQL-injection practice module with a fourth option on its first scenario and five additional four-option scenarios. It does not publish the module; a MARICS administrator must publish it through the guarded admin flow after reviewing the content.
+
+Migration `202610070002_training_completion_integrity.sql` updates organization progress reporting to count a module as complete only when the employee has attempted every scenario currently in that published, non-assessment module. The module total uses the same published, non-assessment modules that contain at least one scenario, so the completion count and total stay consistent.
+
+Migration `202610070003_phishing_scenarios.sql` adds twelve fictional, Namibia-focused phishing scenarios to the published phishing module, each with four answer options and safe verification guidance. The example links are placeholders and the messages are not genuine company notifications.
