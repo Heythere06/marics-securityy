@@ -77,6 +77,7 @@ docs/
 - UTF-8 HTML declaration at the beginning of the document head.
 - Unicode/mojibake fixes and SVG sidebar icons instead of fragile raw icon characters.
 - Organization feature cards use separate, feature-specific copy.
+- Book-a-demo form posts to `POST /api/demo-requests` and MARICS admins can review stored enquiries.
 
 ### Authentication and onboarding
 
@@ -115,6 +116,7 @@ A signup selection does not grant administrator access. Organization administrat
 
 ### Individual training
 
+- Six published human-risk modules cover phishing email, SMS smishing, WhatsApp impersonation, vishing, fake job offers, and mobile-money/EFT fraud, with interactive inspectors for email, SMS threads, branching chats, call transcripts, job packs, and payment changes.
 - Published modules and scenarios load from PostgreSQL.
 - Each published module includes localized learning material explaining why the threat works, its warning signs, and safer practice, alongside the scenario catalog.
 - Users can browse modules, select scenarios within a module, and see progress in the training flow.
@@ -166,7 +168,8 @@ Implemented admin UI:
 - Per-module EN/AF/PT learning-material editor in the same catalog workflow.
 - Platform analytics panel.
 - Audit-log panel.
-- AI moderation and certificate screens remain explicit staged placeholders.
+- Demo-request inbox.
+- AI moderation remains an explicit staged placeholder.
 
 ### Audit and security
 
@@ -258,7 +261,6 @@ The default suite uses deterministic service tests and unauthenticated route tes
 - HTTPS certificate and deployment automation.
 - Backup/restore operations and production monitoring.
 - Advanced report jobs and scheduled exports.
-- Certificate eligibility rules, certificate generation, storage, verification, and downloads.
 - AI-generated content user experience and moderation workflow.
 - AI usage accounting, budget enforcement, and provider cost monitoring beyond the initial rate cap/configuration groundwork.
 - Device security, uploads, malicious-media handling, and broader content moderation.
@@ -308,19 +310,30 @@ Apply all migrations in filename order:
 202609190013_org_team_risk.sql
 202609190014_schema_repair.sql
 202609190015_admin_scenarios.sql
+202609190016_organization_member_activity.sql
+202609190017_training_four_options.sql
+202609300001_user_module_certificates.sql
+202610050001_training_learning_material.sql
+202610050002_sql_injection_scenarios.sql
+202610070001_ai_scenario_followup_limits.sql
+202610070002_training_completion_integrity.sql
+202610070003_phishing_scenarios.sql
+202610230001_certification_assessment.sql
+202611020001_signup_role_and_demo_requests.sql
+202611020002_human_risk_training_modules.sql
+202611020003_invitation_email_match.sql
 ```
 
 Do not paste isolated migration excerpts into a partially initialized database. Use the Supabase migration runner or apply the complete files in order.
 
 ## Recommended Next Steps
 
-1. Apply and independently verify migration `202609190015_admin_scenarios.sql` in each deployed Supabase project.
-2. Add the organization team-risk visual panel.
-3. Expand admin user and organization detail pages, language completeness reporting, and settings editing.
-4. Run authenticated integration tests against a dedicated Supabase test project.
-5. Finalize privacy rules for organization visibility of employee-level risk.
+1. Apply migrations through `202611020002_human_risk_training_modules.sql` in each deployed Supabase project.
+2. Expand admin user and organization detail pages, language completeness reporting, and settings editing.
+3. Run authenticated integration tests against a dedicated Supabase test project.
+4. Finalize privacy rules for organization visibility of employee-level risk.
+5. Connect an invitation email provider.
 6. Only after these are stable, begin Phase 3 AI user-facing generation and cost controls.
-7. Defer certification work until the readiness rule is agreed and Phase 5 begins.
 
 ## Potential Future Features
 

@@ -73,6 +73,19 @@ describe('localized module learning material', () => {
       const [module] = await listPublishedModules(client as never);
       expect(module.learningMaterial).toEqual(learningMaterial);
       expect(module.scenarioSlugs).toEqual(['scenario-a']);
+      expect(module.scenarioTitles).toEqual([{ slug: 'scenario-a', title: 'scenario-a' }]);
+    } finally {
+      if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+    }
+  });
+
+  it('hides published modules that have no scenarios', async () => {
+    const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      const client = { from: () => createQuery([{ id: 'empty', slug: 'empty', title: { en: 'Empty' }, description: { en: 'None' }, learning_material: {}, scenarios: [] }], []) };
+      const modules = await listPublishedModules(client as never);
+      expect(modules).toEqual([]);
     } finally {
       if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
     }
@@ -157,6 +170,16 @@ describe('question-specific why context', () => {
 });
 
 describe('training progress isolation', () => {
+  async function withMockedContentClient<T>(run: () => Promise<T>) {
+    const savedServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      return await run();
+    } finally {
+      if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
+    }
+  }
+
   it('scopes attempts, progress, and risk profile reads to the authenticated user', async () => {
     const calls: string[] = [];
     const userId = 'user-a';
@@ -169,7 +192,7 @@ describe('training progress isolation', () => {
       },
     };
 
-    const summary = await getTrainingSummary(client as never, userId);
+    const summary = await withMockedContentClient(() => getTrainingSummary(client as never, userId));
 
     expect(summary.attempted).toBe(1);
     expect(summary.modules[0].scenariosAttempted).toBe(1);
@@ -191,7 +214,7 @@ describe('training progress isolation', () => {
       },
     };
 
-    const summary = await getTrainingSummary(client as never, 'user-a');
+    const summary = await withMockedContentClient(() => getTrainingSummary(client as never, 'user-a'));
 
     expect(summary.modules[0]).toMatchObject({
       scenarioCount: 6,

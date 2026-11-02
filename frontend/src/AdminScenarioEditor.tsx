@@ -58,14 +58,18 @@ export function AdminScenarioEditor({ accessToken, modules, onMessage, onModuleU
         riskDimensions: current.riskDimensions || generated.manipulationTechnique.slice(0, 80),
         title: generated.title,
         prompt: generated.scenario,
-        options: generated.options.map((option) => ({
-          text: option.text,
-          correct: option.key === generated.correctOption,
-          choice: option.key === generated.correctOption ? 'Recommended response' : 'This response may increase risk',
-          explanation: option.key === generated.correctOption
-            ? `${generated.explanation} ${generated.correctResponse}`
-            : `The attacker may be pursuing ${generated.attackerObjective} through ${generated.manipulationTechnique}.`,
-        })),
+        options: (['A', 'B', 'C', 'D'] as const).map((key) => {
+          const option = generated.options.find((entry) => entry.key === key) ?? { key, text: '' };
+          const correct = option.key === generated.correctOption;
+          return {
+            text: option.text,
+            correct,
+            choice: correct ? 'Recommended response' : 'This response may increase risk',
+            explanation: correct
+              ? `${generated.explanation} ${generated.correctResponse}`
+              : `The attacker may be pursuing ${generated.attackerObjective} through ${generated.manipulationTechnique}.`,
+          };
+        }),
       }));
       onMessage('Claude generated a scenario draft. Review it before saving.');
     } catch (error) { onMessage(error instanceof Error ? error.message : 'AI scenario could not be generated.'); } finally { setGenerating(false); }

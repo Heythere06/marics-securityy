@@ -27,7 +27,9 @@ export async function updateOrganization(client: SupabaseClient, organizationId:
 }
 
 export async function requireOrganizationAdmin(client: SupabaseClient, organizationId: string) {
-  const { data, error } = await client.from('organization_memberships').select('is_admin').eq('organization_id', organizationId).maybeSingle();
+  const { data: auth, error: authError } = await client.auth.getUser();
+  if (authError || !auth.user) throw new Error('FORBIDDEN');
+  const { data, error } = await client.from('organization_memberships').select('is_admin').eq('organization_id', organizationId).eq('user_id', auth.user.id).maybeSingle();
   if (error) throw error;
   if (!data?.is_admin) throw new Error('FORBIDDEN');
 }

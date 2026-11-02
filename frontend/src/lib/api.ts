@@ -1,5 +1,7 @@
 async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  return fetch(input, { ...init, signal: init.signal ?? AbortSignal.timeout(10_000) });
+  const response = await fetch(input, { ...init, signal: init.signal ?? AbortSignal.timeout(10_000) });
+  if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marics:unauthorized'));
+  return response;
 }
 
 export type OnboardingScenario = {
@@ -50,6 +52,7 @@ export async function saveTrainingAnswer(accessToken: string, scenarioSlug: stri
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ optionKey }),
+    signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training answer could not be saved');
   return (await response.json()) as { isCorrect: boolean; feedback: Record<string, string>; explanation: Record<string, string>; correctOptionKey: 'A' | 'B' | 'C' | 'D'; progress: { scenarios_attempted: number; scenarios_correct: number } };
@@ -193,7 +196,7 @@ export async function createAdminScenario(accessToken: string, input: { moduleId
   return (await response.json()).scenario;
 }
 
-export type GeneratedScenario = { title: string; scenario: string; options: Array<{ key: 'A' | 'B' | 'C'; text: string }>; correctOption: 'A' | 'B' | 'C'; explanation: string; manipulationTechnique: string; attackerObjective: string; correctResponse: string };
+export type GeneratedScenario = { title: string; scenario: string; options: Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>; correctOption: 'A' | 'B' | 'C' | 'D'; explanation: string; manipulationTechnique: string; attackerObjective: string; correctResponse: string };
 
 export async function generateScenario(accessToken: string, input: { moduleSlug: string; language: 'en' | 'af' | 'pt'; context: string }) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/generate-scenario`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
@@ -274,8 +277,22 @@ export async function getAdminAuditLog(accessToken: string) {
   return (await adminJson<{ entries: Array<{ id: string; action: string; targetType: string; targetId: string | null; createdAt: string }> }>(accessToken, '/api/admin/audit-log')).entries;
 }
 
-export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; learningMaterial: ModuleLearningMaterial; scenarioCount: number; scenarioSlugs: string[] };
-export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
+export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; learningMaterial: ModuleLearningMaterial; scenarioCount: number; scenarioSlugs: string[]; scenarioTitles?: Array<{ slug: string; title: string }> };
+export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string; interaction?: string; email?: unknown; sms?: unknown; chat?: unknown; call?: unknown; job?: unknown; payment?: unknown }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
+
+export async function submitDemoRequest(input: { name: string; email: string; organizationName?: string; phone?: string; message: string; language?: 'en' | 'af' | 'pt' }) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/demo-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const payload = await response.json().catch(() => ({})) as { message?: string };
+  if (!response.ok) throw new Error(payload.message ?? 'Demo request could not be sent');
+}
+
+export async function getAdminDemoRequests(accessToken: string) {
+  return (await adminJson<{ requests: Array<{ id: string; name: string; email: string; organizationName: string | null; phone: string | null; message: string; language: string; status: string; createdAt: string }> }>(accessToken, '/api/admin/demo-requests')).requests;
+}
+
+export async function getAdminUserDetail(accessToken: string, userId: string) {
+  return (await adminJson<{ user: Record<string, unknown> }>(accessToken, `/api/admin/users/${userId}`)).user;
+}
 
 export async function getTrainingModules(accessToken: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });

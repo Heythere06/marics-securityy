@@ -45,6 +45,7 @@ import {
 import { getOrganizationReportCsv } from './modules/organizations.js';
 import { ensureUserCertificates, listUserCertificates, verifyCertificate } from './modules/certificates.js';
 import { certificationSubmissionSchema, hasPassedCertification, startCertificationAssessment, submitCertificationAssessment } from './modules/certification.js';
+import { createDemoRequest, demoRequestSchema, listDemoRequests } from './modules/demo.js';
 
 type AuthenticatedRequest = { userId?: string; accessToken?: string };
 
@@ -52,8 +53,11 @@ async function requireUser(request: { headers: Record<string, string | string[] 
   const header = request.headers.authorization;
   const token = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) throw new Error('AUTH_REQUIRED');
-  const { data, error } = await createAuthenticatedClient(token).auth.getUser(token);
+  const client = createAuthenticatedClient(token);
+  const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) throw new Error('AUTH_REQUIRED');
+  const { data: profile } = await client.from('profiles').select('suspended_at').eq('id', data.user.id).maybeSingle();
+  if (profile?.suspended_at) throw new Error('AUTH_REQUIRED');
   return { userId: data.user.id, accessToken: token };
 }
 
@@ -92,6 +96,32 @@ export function buildApp() {
   app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
   app.get('/health', async () => ({ status: 'ok', service: 'marics-api' }));
+
+  app.post('/api/demo-requests', async (request, reply) => {
+    try {
+      const input = demoRequestSchema.parse(request.body);
+      const created = await createDemoRequest(input);
+      return reply.code(201).send({ request: { id: created.id, createdAt: created.created_at } });
+    } catch (error) {
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_DEMO_REQUEST', message: 'Enter your name, a valid email, and a short message about the demo.' });
+      request.log.error(error, 'Demo request failed');
+      return reply.code(503).send({ error: 'DEMO_UNAVAILABLE', message: 'We could not save your demo request. Please try again shortly.' });
+    }
+  });
+
+  app.get('/api/admin/demo-requests', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const client = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(client);
+      return reply.send({ requests: await listDemoRequests(client) });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view demo requests.' });
+      if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      request.log.error(error, 'Admin demo request list failed');
+      return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not load demo requests.' });
+    }
+  });
 
   app.get('/api/admin/overview', async (request, reply) => {
     try {
@@ -502,6 +532,7 @@ export function buildApp() {
       return reply.code(200).send(result);
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in before accepting an invitation.' });
+      if (error instanceof Error && error.message.includes('INVITATION_EMAIL_MISMATCH')) return reply.code(403).send({ error: 'INVITATION_EMAIL_MISMATCH', message: 'Sign in with the email address this invitation was sent to.' });
       if (error instanceof z.ZodError || (error instanceof Error && error.message.includes('INVITATION_INVALID'))) return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation is invalid or has expired.' });
       request.log.error(error, 'Invitation acceptance failed');
       return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not accept the invitation.' });

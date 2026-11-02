@@ -131,11 +131,18 @@ describe('health endpoint', () => {
     ['POST', '/api/admin/modules', { slug: 'test', title: 'Test', description: 'Test' }],
     ['PATCH', '/api/admin/modules/00000000-0000-0000-0000-000000000001', { published: true }],
     ['PATCH', '/api/admin/settings', { key: 'supported_languages', value: ['en'] }],
+    ['GET', '/api/admin/demo-requests', undefined],
   ])('protects admin endpoint %s %s', async (method, url, payload) => {
     const response = await app.inject({ method: method as 'GET' | 'POST' | 'PATCH', url, payload });
 
     expect(response.statusCode).toBe(401);
     expect(response.json().error).toBe('AUTH_REQUIRED');
+  });
+
+  it('rejects incomplete public demo requests', async () => {
+    const response = await app.inject({ method: 'POST', url: '/api/demo-requests', payload: { name: 'A', email: 'not-an-email', message: 'Hi' } });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('INVALID_DEMO_REQUEST');
   });
 
   it('protects CSV organization reports', async () => {

@@ -154,3 +154,73 @@ button:focus-visible { outline: 3px solid #d25d38; outline-offset: 3px; }
 .public-logo-wrap.loaded .public-logo-fallback { display: none; }
 .public-logo-wrap.error .public-logo { display: none; }
 @media (max-width: 760px) { .public-logo-wrap { width: 124px; height: 42px; } }.nav-icon { height: 16px; flex: 0 0 16px; display: block; }
+.inspect-card { max-width: 720px; margin: 28px auto 36px; border: 1px solid #d5e0e8; background: #fff; overflow: hidden; }
+.email-window-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; background: #102536; color: #eaf2f8; font-size: 11px; letter-spacing: .08em; }
+.email-window-bar span { width: 8px; height: 8px; border-radius: 50%; background: #d25d38; }
+.email-window-bar span:nth-child(2) { background: #e7b56a; }
+.email-window-bar span:nth-child(3) { background: #6aa7c9; }
+.email-window-bar strong { margin-left: 8px; font-weight: 600; }
+.email-headers { margin: 0; padding: 14px 18px; display: grid; gap: 8px; background: #eaf2f8; }
+.email-headers div { display: grid; grid-template-columns: 70px 1fr; gap: 10px; font-size: 12px; }
+.email-headers dt { color: #60798a; }
+.email-headers dd { margin: 0; color: #102536; overflow-wrap: anywhere; }
+.inspect-progress { margin: 0; padding: 8px 18px 0; color: #60798a; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.inspect-tabs { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid #d5e0e8; }
+.inspect-tabs button { padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; color: #526b7b; background: transparent; cursor: pointer; font-size: 12px; }
+.inspect-tabs button.seen { color: #2f6b9c; }
+.inspect-tabs button.active { color: #a7472e; border-bottom-color: #d25d38; }
+.inspect-pane { padding: 16px 18px 20px; color: #203b50; font-size: 14px; line-height: 1.6; }
+.inspect-pane h3 { margin: 6px 0 10px; font: 400 22px Georgia, serif; }
+.inspect-pane code { overflow-wrap: anywhere; color: #a7472e; font-size: 12px; }
+.inspect-hint { margin-top: 12px; padding: 10px 12px; color: #315d7d; background: #eaf2f8; font-size: 12px; line-height: 1.5; }
+.email-body { white-space: pre-wrap; }
+.email-attach { margin-top: 12px; color: #a7472e; font-size: 12px; }
+.sms-header, .wa-header, .call-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #102536; color: #eaf2f8; }
+.sms-header small, .wa-header small, .call-header small { display: block; margin-top: 3px; color: #9db0bc; font-size: 11px; }
+.sms-thread, .wa-thread { display: grid; gap: 8px; padding: 16px; background: #f3f6f4; min-height: 180px; }
+.sms-bubble, .wa-bubble { max-width: 85%; padding: 10px 12px; border-radius: 12px; color: #102536; background: #fff; font-size: 13px; line-height: 1.45; }
+.sms-bubble.them, .wa-bubble.them { justify-self: start; }
+.sms-bubble.you, .wa-bubble.you { justify-self: end; background: #dceaf4; }
+.sms-bubble.system, .wa-bubble.system { justify-self: center; max-width: 100%; background: #fff4ef; color: #8d3d2e; }
+.sms-bubble small { display: block; margin-top: 4px; color: #60798a; font-size: 10px; }
+.sms-bubble.flagged { outline: 2px solid #d25d38; }
+.scam-flag { display: inline-block; margin-top: 6px; color: #a7472e; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.wa-verified, .wa-unverified { margin-left: 6px; font-size: 10px; font-style: normal; letter-spacing: .06em; text-transform: uppercase; }
+.wa-unverified { color: #f1a27f; }
+.wa-choices, .demo-form, .help-list { display: grid; gap: 8px; padding: 14px 16px 18px; }
+.wa-choices p, .demo-form p { margin: 0 0 6px; color: #526b7b; font-size: 12px; }
+.wa-choices button { padding: 10px 12px; border: 1px solid #cbd9e3; background: #fff; color: #203b50; text-align: left; cursor: pointer; }
+.call-dot { width: 10px; height: 10px; border-radius: 50%; background: #3ba56a; }
+.call-transcript { margin: 0; padding: 16px 18px; display: grid; gap: 14px; }
+.call-transcript li { list-style: none; }
+.call-transcript strong { display: block; color: #a7472e; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.payment-banks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+.payment-banks div { padding: 12px; background: #eaf2f8; }
+.payment-banks .changed { background: #fff4ef; }
+.payment-banks span { display: block; color: #60798a; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.payment-banks strong { display: block; margin-top: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.payment-amount { font: 400 28px Georgia, serif; }
+.team-risk { max-width: 1180px; margin: 0 auto 18px; padding: 24px; border: 1px solid #d5e0e8; background: #fff; }
+.team-risk h2 { margin: 8px 0 14px; font: 400 24px Georgia, serif; }
+.risk-bar { display: grid; grid-template-columns: 140px 1fr 48px; gap: 10px; align-items: center; margin: 8px 0; font-size: 12px; }
+.risk-bar i { display: block; height: 8px; background: #d25d38; }
+.risk-bar span:last-child { color: #60798a; }
+.demo-section, .help-article { max-width: 760px; margin: 0 auto; padding: 28px; border: 1px solid #d5e0e8; background: #fff; }
+.demo-section h2, .help-article h2 { margin: 10px 0 12px; font: 400 28px Georgia, serif; }
+.demo-form label { display: grid; gap: 6px; color: #526b7b; font-size: 12px; }
+.demo-form input, .demo-form textarea { width: 100%; padding: 11px; border: 1px solid #cbd9e3; font: inherit; }
+.public-cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.mobile-nav-toggle { display: none; }
+.sidebar-note { margin: 0 12px 8px; color: #9db0bc; font-size: 11px; line-height: 1.4; }
+.assessment-submit-error { margin-top: 12px; }
+@media (max-width: 760px) {
+  .public-nav { flex-wrap: wrap; }
+  .public-links { display: flex; width: 100%; order: 3; padding-top: 10px; overflow: auto; }
+  .payment-banks, .risk-bar { grid-template-columns: 1fr; }
+  .workspace { flex-direction: column; }
+  .sidebar { width: 100%; min-height: 0; flex-basis: auto; padding: 14px 12px; }
+  .side-nav { display: flex; gap: 6px; overflow: auto; padding-top: 12px; }
+  .side-nav button { flex: 0 0 auto; }
+  .side-bottom { display: flex; gap: 12px; }
+}
+

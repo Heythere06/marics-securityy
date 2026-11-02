@@ -31,20 +31,27 @@ export function splitOptionFeedback(feedback: Record<string, FeedbackLeaf>): { c
 export async function listPublishedModules(client: SupabaseClient) {
   const { data, error } = await publicContentClient(client)
     .from('training_modules')
-    .select('id, slug, title, description, learning_material, is_published, scenarios(id, slug)')
+    .select('id, slug, title, description, learning_material, is_published, scenarios(id, slug, content)')
     .eq('is_published', true)
     .eq('is_assessment', false)
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return data.map((module) => ({
-    id: module.id,
-    slug: module.slug,
-    title: module.title,
-    description: module.description,
-    learningMaterial: module.learning_material,
-    scenarioCount: Array.isArray(module.scenarios) ? module.scenarios.length : 0,
-    scenarioSlugs: Array.isArray(module.scenarios) ? module.scenarios.map((scenario) => scenario.slug).filter((slug): slug is string => Boolean(slug)) : [],
-  }));
+  return data
+    .filter((module) => Array.isArray(module.scenarios) && module.scenarios.length > 0)
+    .map((module) => ({
+      id: module.id,
+      slug: module.slug,
+      title: module.title,
+      description: module.description,
+      learningMaterial: module.learning_material,
+      scenarioCount: module.scenarios.length,
+      scenarioSlugs: module.scenarios.map((scenario) => scenario.slug).filter((slug): slug is string => Boolean(slug)),
+      scenarioTitles: module.scenarios.map((scenario) => {
+        const content = scenario.content as Record<string, { title?: string }> | null;
+        const title = content?.en?.title ?? content?.af?.title ?? content?.pt?.title ?? scenario.slug;
+        return { slug: scenario.slug, title: title ?? scenario.slug };
+      }),
+    }));
 }
 
 export async function getScenario(client: SupabaseClient, scenarioSlug: string) {

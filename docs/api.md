@@ -45,5 +45,7 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `GET /api/admin/audit-log` returns the protected admin audit trail.
 * `GET /api/assessment/onboarding` returns the ten authenticated onboarding scenarios.
 * `GET /api/users/me/risk-profile` returns the authenticated user's stored risk profile.
+* `POST /api/demo-requests` is a public endpoint that stores a validated demo enquiry (`name`, `email`, optional organization/phone, and a short message).
+* `GET /api/admin/demo-requests` lists stored demo enquiries for `marics_admin` users.
 
 Authenticated routes must derive the subject from the Supabase token and confirm all organization membership server-side. Public errors are stable, human-readable codes; stack traces and database messages remain server-side.

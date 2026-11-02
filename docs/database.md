@@ -41,3 +41,11 @@ Migration `202610050002_sql_injection_scenarios.sql` completes the existing SQL-
 Migration `202610070002_training_completion_integrity.sql` updates organization progress reporting to count a module as complete only when the employee has attempted every scenario currently in that published, non-assessment module. The module total uses the same published, non-assessment modules that contain at least one scenario, so the completion count and total stay consistent.
 
 Migration `202610070003_phishing_scenarios.sql` adds twelve fictional, Namibia-focused phishing scenarios to the published phishing module, each with four answer options and safe verification guidance. The example links are placeholders and the messages are not genuine company notifications.
+
+Migration `202610230001_certification_assessment.sql` adds the timed certification assessment and completion lock.
+
+Migration `202611020001_signup_role_and_demo_requests.sql` keeps new profiles on the `individual` role regardless of signup account type, demotes organization admins who have no admin membership, and adds `demo_requests` with MARICS-admin read access. Organization administrator promotion remains `create_organization_for_user` or an audited admin action.
+
+Migration `202611020002_human_risk_training_modules.sql` publishes six interactive human-risk modules (phishing email, SMS smishing, WhatsApp impersonation, vishing, fake job offers, and mobile-money/EFT fraud), each with six four-option scenarios and inspector artifacts in scenario content.
+
+Migration `202611020003_invitation_email_match.sql` rejects invitation acceptance unless the signed-in user's email matches the invited address.

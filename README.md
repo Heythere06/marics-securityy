@@ -1,15 +1,3 @@
-## Supabase setup
-
-Apply the migrations in `supabase/migrations` in filename order, including `202609190015_admin_scenarios.sql`. The admin console requires the signed-in user's profile to have the protected database role:
-
-```sql
-update public.profiles
-set role = 'marics_admin', updated_at = now()
-where id = (select id from auth.users where email = 'your-admin-email@example.com');
-```
-
-The role is checked by `is_marics_admin()` using the authenticated user ID; changing only user metadata will still return `403`.
-
 # MARICS Security
 
 MARICS is a cybersecurity awareness and human-risk training platform. It uses realistic social-engineering scenarios, explainable answer feedback, risk profiles, personalized training recommendations, organization-level human-risk insight, and an audited platform administration layer.
@@ -32,13 +20,23 @@ docs/      architecture, API, security, and delivery decisions
 
 The frontend runs on `http://localhost:5173` and the API on `http://localhost:4000`. The API health check is `GET /health`.
 
-The current repository includes database-backed onboarding assessment, risk profiles, training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, and a server-side AI adapter. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes. AI generation remains a later product phase and is not yet a complete user-facing workflow.
+The current repository includes database-backed onboarding assessment, risk profiles, interactive training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, public demo requests, and a server-side AI adapter. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes. AI generation remains a later product phase and is not yet a complete user-facing workflow.
 
-<<<<<<< HEAD
-Supabase migrations must be applied in filename order through `202610230001_certification_assessment.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, bounded AI follow-up, and certification flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
-=======
-Supabase migrations must be applied in filename order through `202610070003_phishing_scenarios.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, bounded AI follow-up, verified training-completion, and phishing-awareness training flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
->>>>>>> 22017ca7cc5ad9512e8cf9b3f6e010712e1fb019
+Supabase migrations must be applied in filename order through `202611020003_invitation_email_match.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, bounded AI follow-up, verified training-completion, certification assessment, demo requests, and interactive email/SMS/WhatsApp/voice/job/mobile-money training flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
+
+## Supabase setup
+
+Apply the migrations in `supabase/migrations` in filename order, including `202611020003_invitation_email_match.sql`. The admin console requires the signed-in user's profile to have the protected database role:
+
+```sql
+update public.profiles
+set role = 'marics_admin', updated_at = now()
+where id = (select id from auth.users where email = 'your-admin-email@example.com');
+```
+
+The role is checked by `is_marics_admin()` using the authenticated user ID; changing only user metadata will still return `403`.
+
+Signup never grants `organization_admin`. That promotion happens only through `create_organization_for_user` after the workspace is created, or through an audited MARICS-admin action.
 
 ## Project Documentation
 
