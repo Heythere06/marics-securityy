@@ -187,7 +187,8 @@ describe('training progress isolation', () => {
       from(table: string) {
         if (table === 'training_attempts') return createQuery([{ scenario_id: 'scenario-a', is_correct: true, created_at: '2026-09-21T10:00:00Z' }], calls);
         if (table === 'training_modules') return createQuery([{ id: 'module-a', slug: 'module-a', title: { en: 'Module A' }, scenarios: [{ id: 'scenario-a', risk_dimensions: ['Urgency'] }] }], calls);
-        if (table === 'training_progress') return createQuery([{ module_id: 'module-a', scenarios_attempted: 1, scenarios_correct: 1, completed_at: null }], calls);
+        if (table === 'training_progress') return createQuery([{ module_id: 'module-a', scenarios_attempted: 1, scenarios_correct: 1, completed_at: null, ai_scenarios_attempted: 0, ai_scenarios_correct: 0 }], calls);
+        if (table === 'ai_practice_attempts') return createQuery([], calls);
         return createQuery({ focus_dimension: 'Urgency' }, calls);
       },
     };
@@ -196,8 +197,9 @@ describe('training progress isolation', () => {
 
     expect(summary.attempted).toBe(1);
     expect(summary.modules[0].scenariosAttempted).toBe(1);
+    expect(summary.modules[0].aiScenariosAttempted).toBe(0);
     expect(calls).toContain('eq:user_id:user-a');
-    expect(calls.filter((call) => call === 'eq:user_id:user-a')).toHaveLength(3);
+    expect(calls.filter((call) => call === 'eq:user_id:user-a')).toHaveLength(4);
   });
 
   it('does not complete a module until every distinct scenario has been attempted', async () => {

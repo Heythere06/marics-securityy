@@ -22,6 +22,10 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `GET /api/certificates` returns the authenticated user's certificates and awards any eligible completed-module certificates. `GET /api/certificates/verify/:verificationId` publicly validates a certificate without exposing account data beyond recipient and module.
 * `POST /api/ai/generate-scenario` asks Claude for one structured scenario and caches it by user, module, language, and prompt. It is authenticated and limited to five requests per hour; the MARICS admin scenario editor uses it to populate a reviewable draft.
 * `POST /api/ai/scenario-why` returns one short answer to a learner's question about the current scenario. The request includes the complete scenario, all four options, selected and correct answers, existing explanation, and one bounded question; no conversation history or general-chat prompt is accepted. Requests are limited to ten per user per UTC day and also enforce the platform `ai_usage_cap.monthlyRequests` and `rate_limit_config` values. Apply migration `202610070001_ai_scenario_followup_limits.sql`.
+* `POST /api/training/modules/:moduleSlug/ai-practice` generates one fresh Claude practice scenario after the learner has completed every manually written scenario in that module. Manual catalog content is never replaced. Apply migration `202611040001_ai_practice_scenarios.sql`.
+* `GET /api/training/modules/:moduleSlug/ai-practice` lists the learner’s AI practice scenarios for a module.
+* `GET /api/training/ai-practice/:scenarioSlug` returns one learner-scoped AI practice scenario.
+* `POST /api/training/ai-practice/:scenarioSlug/answer` scores an AI practice answer, updates module AI progress counters, and soft-updates the learner’s Human Risk Profile.
 * `POST /api/organizations` creates an organization and makes the authenticated creator its admin.
 * `POST /api/organizations/:organizationId/invitations` creates a hashed, expiring invitation for an admin-managed organization.
 * `POST /api/organizations/invitations/accept` accepts an invitation for the authenticated user.
@@ -33,7 +37,10 @@ The API is versioned under `/api` and returns JSON. Route handlers are thin; val
 * `GET /api/admin/users` and `GET /api/admin/users/:userId` provide protected user search/detail access.
 * `PATCH /api/admin/users/:userId/role` changes a role through the audited admin service.
 * `PATCH /api/admin/users/:userId/suspended` suspends or reactivates an account.
-* `POST /api/admin/users/:userId/resend-verification` requests a server-side verification resend.
+* `POST /api/auth/resend-verification` publicly requests a signup verification email (`{ "email": "..." }`, rate-limited). The API generates a Supabase confirmation link with the service role and delivers it through configured SMTP (preferred) or Resend; responses stay generic to avoid account enumeration.
+* `GET /api/organizations/invitations/preview?token=` publicly previews an invitation (org name, invited email, expired/used) for the auth landing page; rate-limited.
+* `POST /api/organizations/:organizationId/invitations` returns the invitation token even when email delivery fails (`emailDelivered: false`) so admins can still share the link.
+* `POST /api/admin/users/:userId/resend-verification` requests a server-side verification resend through the same mailer path.
 * `GET /api/admin/organizations` and `GET /api/admin/organizations/:organizationId` provide organization search/detail access.
 * `POST /api/admin/organizations` creates an organization through the audited admin path.
 * `PATCH /api/admin/organizations/:organizationId/suspended` suspends or reactivates an organization.

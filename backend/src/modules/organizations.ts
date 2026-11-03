@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildOrganizationInvitationEmail, isEmailConfigured, sendEmail } from '../lib/email.js';
 import { createServiceClient } from '../lib/supabase.js';
 
 export const organizationSchema = z.object({ name: z.string().trim().min(2).max(180) });
@@ -36,9 +37,6 @@ export async function requireOrganizationAdmin(client: SupabaseClient, organizat
 
 export async function createInvitation(client: SupabaseClient, organizationId: string, email: string) {
   await requireOrganizationAdmin(client, organizationId);
-  const { data, error } = await client.rpc('create_organization_invitation', { target_org: organizationId, target_email: email });
-  if (error) throw error;
-  const invitation = data as { id: string; email: string; token: string; expiresAt: string };
   const [{ data: organization, error: organizationError }, { data: authUser, error: authError }] = await Promise.all([
     client.from('organizations').select('name').eq('id', organizationId).single(),
     client.auth.getUser(),
@@ -47,19 +45,91 @@ export async function createInvitation(client: SupabaseClient, organizationId: s
   if (authError || !authUser.user) throw authError ?? new Error('INVITER_NOT_FOUND');
   const { data: inviter, error: inviterError } = await client.from('profiles').select('full_name').eq('id', authUser.user.id).single();
   if (inviterError) throw inviterError;
-  await sendOrganizationInvitationEmail(invitation.email, invitation.token);
+
+  let invitation: { id: string; email: string; token: string; expiresAt: string };
+  const { data, error } = await client.rpc('create_organization_invitation', { target_org: organizationId, target_email: email });
+  if (error) {
+    // Supabase often installs pgcrypto in the extensions schema; older RPCs with
+    // search_path=public fail on gen_random_bytes. Fall back to a service-role insert.
+    invitation = await createInvitationWithServiceRole(organizationId, email, authUser.user.id);
+  } else {
+    invitation = data as { id: string; email: string; token: string; expiresAt: string };
+  }
+
+  try {
+    await sendOrganizationInvitationEmail(
+      invitation.email,
+      invitation.token,
+      organization?.name ?? 'your organization',
+      inviter?.full_name ?? 'A MARICS administrator',
+    );
+  } catch (error) {
+    if (error instanceof Error && (error.message === 'INVITATION_EMAIL_FAILED' || error.message === 'INVITATION_EMAIL_NOT_CONFIGURED')) {
+      const deliveryError = new Error(error.message);
+      deliveryError.cause = { ...(error.cause as object | undefined), invitation };
+      throw deliveryError;
+    }
+    throw error;
+  }
   return invitation;
 }
 
-async function sendOrganizationInvitationEmail(email: string, token: string) {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.SUPABASE_URL) throw new Error('INVITATION_EMAIL_NOT_CONFIGURED');
+export async function previewInvitationByToken(rawToken: string) {
+  const service = createServiceClient();
+  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+  const { data, error } = await service
+    .from('organization_invitations')
+    .select('email, expires_at, accepted_at, organizations(id, name)')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('INVITATION_INVALID');
+  const organization = Array.isArray(data.organizations) ? data.organizations[0] : data.organizations;
+  return {
+    organizationName: organization?.name ?? 'Organization',
+    email: data.email as string,
+    expiresAt: data.expires_at as string,
+    isExpired: new Date(data.expires_at).getTime() <= Date.now(),
+    isUsed: Boolean(data.accepted_at),
+  };
+}
+
+async function createInvitationWithServiceRole(organizationId: string, email: string, invitedBy: string) {
+  const service = createServiceClient();
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await service.from('organization_invitations').insert({
+    organization_id: organizationId,
+    email: normalizedEmail,
+    token_hash: tokenHash,
+    invited_by: invitedBy,
+    expires_at: expiresAt,
+  }).select('id, email, expires_at').single();
+  if (error) throw error;
+  return { id: data.id, email: data.email, token, expiresAt: data.expires_at };
+}
+
+async function sendOrganizationInvitationEmail(email: string, token: string, organizationName: string, inviterName: string) {
+  if (!isEmailConfigured()) throw new Error('INVITATION_EMAIL_NOT_CONFIGURED');
   const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
   const invitationUrl = `${frontendUrl}/?invite=${encodeURIComponent(token)}`;
-  const { error } = await createServiceClient().auth.admin.inviteUserByEmail(email, { redirectTo: invitationUrl });
-  if (error) {
-    const deliveryError = new Error('INVITATION_EMAIL_FAILED');
-    deliveryError.cause = { provider: 'supabase_auth', message: error.message, name: error.name, status: error.status };
-    throw deliveryError;
+  const message = buildOrganizationInvitationEmail({
+    organizationName,
+    inviterName: inviterName || 'A MARICS administrator',
+    invitationUrl,
+  });
+  try {
+    await sendEmail({ to: email, ...message });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'EMAIL_NOT_CONFIGURED') throw new Error('INVITATION_EMAIL_NOT_CONFIGURED');
+    if (error instanceof Error && error.message === 'EMAIL_DELIVERY_FAILED') {
+      const deliveryError = new Error('INVITATION_EMAIL_FAILED');
+      deliveryError.cause = error.cause;
+      throw deliveryError;
+    }
+    throw error;
   }
 }
 
@@ -83,8 +153,49 @@ export async function getInvitationByToken(client: SupabaseClient, rawToken: str
 
 export async function acceptInvitation(client: SupabaseClient, token: string) {
   const { data, error } = await client.rpc('accept_organization_invitation', { raw_token: token });
-  if (error) throw error;
-  return data as { organizationId: string };
+  if (!error) return data as { organizationId: string };
+
+  // Fallback when digest()/pgcrypto is not visible on the RPC search_path.
+  const { data: authUser, error: authError } = await client.auth.getUser();
+  if (authError || !authUser.user) throw new Error('AUTH_REQUIRED');
+
+  const service = createServiceClient();
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const { data: invitation, error: invitationError } = await service
+    .from('organization_invitations')
+    .select('id, email, expires_at, accepted_at, organization_id')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+  if (invitationError) throw invitationError;
+  if (!invitation) throw new Error('INVITATION_INVALID');
+  if (invitation.accepted_at || new Date(invitation.expires_at).getTime() <= Date.now()) {
+    throw new Error('INVITATION_INVALID');
+  }
+
+  const signedInEmail = (authUser.user.email ?? '').trim().toLowerCase();
+  if (!signedInEmail || signedInEmail !== String(invitation.email).trim().toLowerCase()) {
+    throw new Error('INVITATION_EMAIL_MISMATCH');
+  }
+
+  const { error: membershipError } = await service.from('organization_memberships').upsert({
+    organization_id: invitation.organization_id,
+    user_id: authUser.user.id,
+    is_admin: false,
+  }, { onConflict: 'organization_id,user_id', ignoreDuplicates: true });
+  if (membershipError) throw membershipError;
+
+  const { error: markError } = await service.from('organization_invitations')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('id', invitation.id)
+    .is('accepted_at', null);
+  if (markError) throw markError;
+
+  await service.from('profiles')
+    .update({ role: 'employee', account_type: 'individual', updated_at: new Date().toISOString() })
+    .eq('id', authUser.user.id)
+    .eq('role', 'individual');
+
+  return { organizationId: invitation.organization_id };
 }
 
 export async function removeOrganizationMember(client: SupabaseClient, organizationId: string, userId: string) {
