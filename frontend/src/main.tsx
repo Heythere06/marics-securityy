@@ -484,9 +484,113 @@ function App() {
 
 function PublicSite({ language, setLanguage }: { language: Language; setLanguage: (language: Language) => void }) {
   const [showAuth, setShowAuth] = useState(() => Boolean(new URLSearchParams(window.location.search).get('invite')) || window.location.hash === '#login');
+  const [logoState, setLogoState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const t = getTranslations(language);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
   if (showAuth) return <AuthScreen configured={supabase !== null} language={language} setLanguage={(value) => setLanguage(value as Language)} onBack={() => setShowAuth(false)} />;
-  return <main className="public-site"><nav className="public-nav"><span className="public-logo-wrap"><img className="public-logo" src="/assets/marics-logo.png.png" alt="MARICS Security" onLoad={(event) => event.currentTarget.parentElement?.classList.add("loaded")} onError={(event) => event.currentTarget.parentElement?.classList.add("error")} /><span className="public-logo-fallback">MARICS<span>/ SECURITY</span></span></span><div className="public-links"><a href="#why">{t.nav.howItWorks}</a><a href="#features">{t.nav.features}</a><a href="#organizations">{t.nav.organizations}</a><a href="#demo">{t.nav.demo}</a><a href="#pricing">{t.nav.pricing}</a></div><select aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value as Language)}><option value="en">EN</option><option value="af">AF</option><option value="pt">PT</option></select><button onClick={() => setShowAuth(true)}>{t.nav.login}</button></nav><section className="public-hero"><div className="hero-copy"><p className="eyebrow">{t.landing.eyebrow}</p><h1>{t.landing.title}</h1><p className="public-lede">{t.landing.body}</p><div className="public-actions"><button className="primary" onClick={() => setShowAuth(true)}>{t.landing.primary} <b>&#8594;</b></button><a href="#why">{t.landing.secondary} <span>&#8595;</span></a></div></div><div className="hero-visual"><img src="/assets/marics-dashboard.jpg.jpeg" alt="MARICS security operations dashboard" /><span className="pulse-tag">LIVE HUMAN RISK SIGNALS</span></div></section><section id="why" className="why-section"><div className="why-overlay"><p className="eyebrow">01 / WHY MARICS</p><h2>{t.landing.intro}</h2><p>{t.landing.introBody}</p><div className="why-stat"><strong>01</strong><span>Practice the pressure before it becomes a breach.</span></div></div></section><section id="features" className="public-intro"><div><p className="eyebrow">02 / THE MARICS METHOD</p><h2>{t.landing.how}</h2></div><div className="intro-visual"><img src="/assets/marics-mobile.jpg.png" alt="A mobile security training scenario" /><p>{t.landing.introBody}</p></div></section><section id="organizations" className="people-section"><div className="people-visual"><img src="/assets/marics-team.jpg.png" alt="A team collaborating around cybersecurity" /></div><div><p className="eyebrow">03 / FOR ORGANIZATIONS</p><h2>Make resilience a team habit.</h2><p>{t.landing.security}</p><a href="#pricing">Explore organization intelligence &#8594;</a></div></section><section className="public-steps">{t.landing.features.map((feature, index) => <article key={feature}><span>0{index + 1}</span><h3>{feature}</h3><p>{t.landing.featureBodies[index]}</p></article>)}</section><section className="security-section"><img src="/assets/marics-security-team.jpg.jpeg" alt="Cybersecurity team protecting an organization" /><div><p className="eyebrow">04 / BUILT FOR TRUST</p><h2>Security awareness that feels close to the real world.</h2><p>{t.landing.security}</p></div></section><section id="demo" className="public-intro"><div><p className="eyebrow">05 / BOOK A DEMO</p><h2>See MARICS with your own team risk in mind.</h2></div><DemoRequestForm language={language} /></section><section id="pricing" className="public-cta"><p className="eyebrow">MARICS / SECURITY</p><h2>{t.landing.cta}</h2><div className="public-cta-row"><button className="primary" onClick={() => setShowAuth(true)}>{t.landing.primary} <b>&#8594;</b></button><a href="#demo">{t.nav.demo}</a></div></section><footer><span>{t.landing.footer}</span><span>{t.nav.about} &#183; <a href="#demo">{t.nav.demo}</a> &#183; <button className="text-button" onClick={() => setShowAuth(true)}>{t.nav.signup}</button></span></footer></main>;
+
+  return <main className="public-site">
+    <nav className="public-nav" aria-label="Primary">
+      <a className={`public-logo-wrap ${logoState}`} href="#top" aria-label="MARICS Security home">
+        <img className="public-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} fetchPriority="high" onLoad={() => setLogoState('loaded')} onError={() => setLogoState('error')} />
+        <span className="public-logo-fallback" aria-hidden={logoState === 'loaded'}>MARICS<span>/ SECURITY</span></span>
+      </a>
+      <div className="public-links">
+        <a href="#why">{t.nav.howItWorks}</a>
+        <a href="#features">{t.nav.features}</a>
+        <a href="#organizations">{t.nav.organizations}</a>
+        <a href="#demo">{t.nav.demo}</a>
+        <a href="#get-started">{t.nav.getStarted}</a>
+      </div>
+      <select aria-label="Language" value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+        <option value="en">EN</option>
+        <option value="af">AF</option>
+        <option value="pt">PT</option>
+      </select>
+      <button type="button" onClick={() => setShowAuth(true)}>{t.nav.login}</button>
+    </nav>
+
+    <section id="top" className="public-hero">
+      <div className="hero-media" aria-hidden="true">
+        <img src="/assets/marics-dashboard.webp" alt="" width={1400} height={900} fetchPriority="high" />
+      </div>
+      <div className="hero-copy">
+        <p className="eyebrow">{t.landing.eyebrow}</p>
+        <h1>{t.landing.title}</h1>
+        <p className="public-lede">{t.landing.body}</p>
+        <div className="public-actions">
+          <button type="button" className="primary" onClick={() => setShowAuth(true)}>{t.landing.primary} <b>→</b></button>
+          <a href="#why">{t.landing.secondary} <span>↓</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="why" className="why-section">
+      <div className="why-overlay">
+        <p className="eyebrow">{t.landing.whyEyebrow}</p>
+        <h2>{t.landing.intro}</h2>
+        <p>{t.landing.introBody}</p>
+        <div className="why-stat"><strong>01</strong><span>{t.landing.whyStat}</span></div>
+      </div>
+    </section>
+
+    <section id="features" className="public-method">
+      <div className="method-intro">
+        <p className="eyebrow">{t.landing.methodEyebrow}</p>
+        <h2>{t.landing.how}</h2>
+        <img src="/assets/marics-mobile.webp" alt="A mobile security training scenario" width={640} height={800} loading="lazy" />
+      </div>
+      <div className="public-steps">
+        {t.landing.features.map((feature, index) => (
+          <article key={feature}>
+            <span>0{index + 1}</span>
+            <h3>{feature}</h3>
+            <p>{t.landing.featureBodies[index]}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section id="organizations" className="people-section">
+      <div className="people-visual">
+        <img src="/assets/marics-team.webp" alt="A team collaborating around cybersecurity" width={1200} height={800} loading="lazy" />
+      </div>
+      <div>
+        <p className="eyebrow">{t.landing.orgEyebrow}</p>
+        <h2>{t.landing.orgTitle}</h2>
+        <p>{t.landing.orgBody}</p>
+        <a href="#demo">{t.landing.orgCta} →</a>
+      </div>
+    </section>
+
+    <section id="demo" className="public-demo">
+      <div>
+        <p className="eyebrow">{t.landing.demoEyebrow}</p>
+        <h2>{t.landing.demoTitle}</h2>
+      </div>
+      <DemoRequestForm language={language} />
+    </section>
+
+    <section id="get-started" className="public-cta">
+      <p className="eyebrow">{t.landing.ctaEyebrow}</p>
+      <h2>{t.landing.cta}</h2>
+      <div className="public-cta-row">
+        <button type="button" className="primary" onClick={() => setShowAuth(true)}>{t.landing.primary} <b>→</b></button>
+        <a href="#demo">{t.nav.demo}</a>
+      </div>
+    </section>
+
+    <footer>
+      <span>{t.landing.footer}</span>
+      <span>
+        <a href="#why">{t.nav.about}</a> · <a href="#demo">{t.nav.demo}</a> · <button type="button" className="text-button" onClick={() => setShowAuth(true)}>{t.nav.signup}</button>
+      </span>
+    </footer>
+  </main>;
 }
 
 function AuthScreen({ configured, language, setLanguage, onBack }: { configured: boolean; language: Language; setLanguage: (language: string) => void; onBack?: () => void }) {
@@ -669,7 +773,7 @@ function Sidebar({ role, accountType, displayName, organizationName, language, o
           ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization'], ['settings', 'settings', 'Settings']]
           : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']];
   const accountLabel = accountTypeLabel(role, organizationName);
-  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.png.png" alt="MARICS Security" /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button onClick={() => setView('help')}><span>?</span> Help centre</button></div></aside>;
+  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button onClick={() => setView('help')}><span>?</span> Help centre</button></div></aside>;
 }
 
 function AssessmentView({ language, t, loading, saving, error, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
@@ -1250,6 +1354,7 @@ function TrainingView({ language, modules, selectedScenarioSlug, onScenarioSelec
 }
 
 function DemoRequestForm({ language }: { language: Language }) {
+  const t = getTranslations(language).landing;
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [organizationName, setOrganizationName] = useState('');
@@ -1263,15 +1368,24 @@ function DemoRequestForm({ language }: { language: Language }) {
     try {
       await submitDemoRequest({ name, email, organizationName, phone, message, language });
       setName(''); setEmail(''); setOrganizationName(''); setPhone(''); setMessage('');
-      setStatus('Thank you. A MARICS specialist will contact you about a demo.');
+      setStatus(t.demoSuccess);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'The demo request could not be sent.';
-      setStatus(/failed to fetch|networkerror|timeout|abort/i.test(message) ? 'We could not reach the MARICS API. Confirm the backend is running on port 4000 and try again.' : message);
+      const errorMessage = error instanceof Error ? error.message : t.demoNetworkError;
+      setStatus(/failed to fetch|networkerror|timeout|abort/i.test(errorMessage) ? t.demoNetworkError : errorMessage);
     } finally {
       setBusy(false);
     }
   };
-  return <form className="demo-form demo-section" onSubmit={submit}><p>Tell us about your team. We use this only to schedule a demonstration.</p><label>Name<input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} /></label><label>Work email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Organization<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} /></label><label>Phone<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label><label>What would you like to see?<textarea value={message} onChange={(event) => setMessage(event.target.value)} required minLength={10} rows={4} /></label><button className="primary" disabled={busy}>{busy ? 'Sending...' : 'Request a demo'} <b>&#8594;</b></button>{status && <p role="status">{status}</p>}</form>;
+  return <form className="demo-form demo-section" onSubmit={submit}>
+    <p>{t.demoIntro}</p>
+    <label>{t.demoName}<input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} autoComplete="name" /></label>
+    <label>{t.demoEmail}<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
+    <label>{t.demoOrganization}<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} autoComplete="organization" /></label>
+    <label>{t.demoPhone}<input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" /></label>
+    <label>{t.demoMessage}<textarea value={message} onChange={(event) => setMessage(event.target.value)} required minLength={10} rows={4} /></label>
+    <button type="submit" className="primary" disabled={busy}>{busy ? t.demoSending : t.demoSubmit} <b>→</b></button>
+    {status && <p role="status">{status}</p>}
+  </form>;
 }
 
 function PasswordRecoveryScreen({ onDone }: { onDone: () => void }) {
