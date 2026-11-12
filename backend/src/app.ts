@@ -7,7 +7,8 @@ import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
 import { explainScenarioWhy, generateScenario, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
-import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
+import { aiPracticeAnswerSchema, aiPracticeGenerateSchema, generateAiPracticeScenario, getAiPracticeScenario, listAiPracticeScenarios, recordAiPracticeAnswer } from './modules/aiPractice.js';
+import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, previewInvitationByToken, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
   adminArchiveSchema,
   adminModuleSchema,
@@ -46,6 +47,7 @@ import { getOrganizationReportCsv } from './modules/organizations.js';
 import { ensureUserCertificates, listUserCertificates, verifyCertificate } from './modules/certificates.js';
 import { certificationSubmissionSchema, hasPassedCertification, startCertificationAssessment, submitCertificationAssessment } from './modules/certification.js';
 import { createDemoRequest, demoRequestSchema, listDemoRequests } from './modules/demo.js';
+import { requestSignupVerificationEmail, resendVerificationSchema } from './modules/authEmail.js';
 
 type AuthenticatedRequest = { userId?: string; accessToken?: string };
 
@@ -96,6 +98,33 @@ export function buildApp() {
   app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
   app.get('/health', async () => ({ status: 'ok', service: 'marics-api' }));
+
+  app.post('/api/auth/resend-verification', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    try {
+      const input = resendVerificationSchema.parse(request.body);
+      await requestSignupVerificationEmail(input.email);
+      return reply.send({
+        status: 'accepted',
+        message: 'If that email still needs verification, a confirmation message is on its way. Check inbox and spam.',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return reply.code(400).send({ error: 'INVALID_EMAIL', message: 'Enter a valid email address.' });
+      }
+      if (error instanceof Error && error.message === 'EMAIL_NOT_CONFIGURED') {
+        return reply.code(503).send({ error: 'EMAIL_NOT_CONFIGURED', message: 'Verification email is not configured on the API server yet.' });
+      }
+      if (error instanceof Error && error.message === 'VERIFICATION_UNAVAILABLE') {
+        return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Verification email requires the Supabase service role on the API server.' });
+      }
+      if (error instanceof Error && error.message === 'EMAIL_DELIVERY_FAILED') {
+        request.log.error({ err: error, cause: error.cause }, 'Verification email delivery failed');
+        return reply.code(502).send({ error: 'EMAIL_DELIVERY_FAILED', message: 'We could not deliver the verification email. Check SMTP or Resend settings and EMAIL_FROM.' });
+      }
+      request.log.error(error, 'Verification email request failed');
+      return reply.code(500).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'We could not send a verification email right now.' });
+    }
+  });
 
   app.post('/api/demo-requests', async (request, reply) => {
     try {
@@ -276,7 +305,10 @@ export function buildApp() {
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to resend verification.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
-      if (error instanceof Error && error.message === 'ADMIN_VERIFICATION_UNAVAILABLE') return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Verification resend requires the Supabase service role on the API server.' });
+      if (error instanceof Error && error.message === 'ADMIN_VERIFICATION_UNAVAILABLE') return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Verification resend requires SMTP or Resend plus the Supabase service role on the API server.' });
+      if (error instanceof Error && error.message === 'USER_ALREADY_VERIFIED') return reply.code(409).send({ error: 'USER_ALREADY_VERIFIED', message: 'That account is already verified.' });
+      if (error instanceof Error && error.message === 'USER_NOT_FOUND') return reply.code(404).send({ error: 'USER_NOT_FOUND', message: 'That user could not be found.' });
+      if (error instanceof Error && error.message === 'EMAIL_DELIVERY_FAILED') return reply.code(502).send({ error: 'EMAIL_DELIVERY_FAILED', message: 'We could not deliver the verification email. Check SMTP or Resend settings and EMAIL_FROM.' });
       request.log.error(error, 'Admin verification resend failed');
       return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not resend verification.' });
     }
@@ -499,14 +531,38 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to invite an employee.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_INVITATION', message: 'Enter a valid employee email address.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to invite employees to this organization.' });
-      if (error instanceof Error && error.message === 'INVITATION_EMAIL_NOT_CONFIGURED') return reply.code(503).send({ error: 'INVITATION_EMAIL_NOT_CONFIGURED', message: 'Invitation email delivery is not configured on the server.' });
+      if (error instanceof Error && error.message === 'INVITATION_EMAIL_NOT_CONFIGURED') {
+        const invitation = (error.cause as { invitation?: { id: string; email: string; token: string; expiresAt: string } } | undefined)?.invitation;
+        return reply.code(503).send({ error: 'INVITATION_EMAIL_NOT_CONFIGURED', message: 'Invitation email delivery is not configured on the server.', invitation: invitation ?? null, emailDelivered: false });
+      }
       if (error instanceof Error && error.message === 'INVITATION_EMAIL_FAILED') {
-        const providerError = error.cause as { status?: number; name?: string; message?: string } | undefined;
+        const providerError = error.cause as { status?: number; name?: string; message?: string; invitation?: { id: string; email: string; token: string; expiresAt: string } } | undefined;
         request.log.error({ provider: providerError }, 'Invitation email provider rejected delivery');
-        return reply.code(502).send({ error: 'INVITATION_EMAIL_FAILED', message: providerError?.message ?? 'The invitation was created, but the email provider rejected delivery.', provider: providerError?.name ?? 'unknown_error', providerStatus: providerError?.status });
+        return reply.code(502).send({
+          error: 'INVITATION_EMAIL_FAILED',
+          message: providerError?.message ?? 'The invitation was created, but the email provider rejected delivery.',
+          provider: providerError?.name ?? 'unknown_error',
+          providerStatus: providerError?.status,
+          invitation: providerError?.invitation ?? null,
+          emailDelivered: false,
+        });
       }
       request.log.error(error, 'Invitation creation failed');
       return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not create the invitation.' });
+    }
+  });
+
+  app.get('/api/organizations/invitations/preview', { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } }, async (request, reply) => {
+    try {
+      const token = z.string().regex(/^[a-f0-9]{64}$/i).parse((request.query as { token?: string })?.token);
+      const invitation = await previewInvitationByToken(token);
+      return reply.send({ invitation });
+    } catch (error) {
+      if (error instanceof z.ZodError || (error instanceof Error && error.message.includes('INVITATION_INVALID'))) {
+        return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation link is invalid or has expired.' });
+      }
+      request.log.error(error, 'Invitation preview failed');
+      return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not preview this invitation.' });
     }
   });
 
@@ -814,6 +870,73 @@ export function buildApp() {
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid training scenario.' });
       request.log.error(error, 'Training scenario lookup failed');
       return reply.code(500).send({ error: 'TRAINING_SCENARIO_UNAVAILABLE', message: 'We could not load this training scenario.' });
+    }
+  });
+
+  app.get('/api/training/modules/:moduleSlug/ai-practice', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const moduleSlug = z.string().regex(/^[a-z0-9-]+$/).parse((request.params as { moduleSlug: string }).moduleSlug);
+      const scenarios = await listAiPracticeScenarios(createAuthenticatedClient(auth.accessToken!), auth.userId!, moduleSlug);
+      return reply.send({ scenarios });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view AI practice scenarios.' });
+      if (error instanceof Error && error.message === 'MODULE_UNAVAILABLE') return reply.code(404).send({ error: 'MODULE_NOT_FOUND', message: 'This training module is not available.' });
+      request.log.error(error, 'AI practice list failed');
+      return reply.code(500).send({ error: 'AI_PRACTICE_UNAVAILABLE', message: 'We could not load AI practice scenarios.' });
+    }
+  });
+
+  app.post('/api/training/modules/:moduleSlug/ai-practice', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const moduleSlug = z.string().regex(/^[a-z0-9-]+$/).parse((request.params as { moduleSlug: string }).moduleSlug);
+      const body = aiPracticeGenerateSchema.parse({ ...(request.body as object), moduleSlug });
+      const userClient = createAuthenticatedClient(auth.accessToken!);
+      const { data } = await userClient.auth.getUser(auth.accessToken);
+      const scenario = await generateAiPracticeScenario(userClient, data.user!, body);
+      return reply.code(201).send({ scenario });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate AI practice scenarios.' });
+      if (error instanceof Error && error.message === 'MANUAL_SCENARIOS_INCOMPLETE') return reply.code(403).send({ error: 'MANUAL_SCENARIOS_INCOMPLETE', message: 'Complete every manually written scenario in this module before unlocking AI practice.' });
+      if (error instanceof Error && error.message === 'MODULE_UNAVAILABLE') return reply.code(404).send({ error: 'MODULE_NOT_FOUND', message: 'This training module is not available.' });
+      if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'AI scenario generation is not configured.' });
+      if (error instanceof z.ZodError || error instanceof SyntaxError || (error instanceof Error && error.message === 'AI_INVALID_OUTPUT')) return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The generated practice scenario could not be validated. Please try again.' });
+      request.log.error(error, 'AI practice generation failed');
+      return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'We could not generate a practice scenario right now. Please try again later.' });
+    }
+  });
+
+  app.get('/api/training/ai-practice/:scenarioSlug', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const scenarioSlug = z.string().regex(/^ai-practice-[a-z0-9-]+$/).parse((request.params as { scenarioSlug: string }).scenarioSlug);
+      const scenario = await getAiPracticeScenario(createAuthenticatedClient(auth.accessToken!), auth.userId!, scenarioSlug);
+      return reply.send({ scenario });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this practice scenario.' });
+      if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This AI practice scenario is not available.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid AI practice scenario.' });
+      request.log.error(error, 'AI practice scenario lookup failed');
+      return reply.code(500).send({ error: 'AI_PRACTICE_UNAVAILABLE', message: 'We could not load this AI practice scenario.' });
+    }
+  });
+
+  app.post('/api/training/ai-practice/:scenarioSlug/answer', async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const scenarioSlug = z.string().regex(/^ai-practice-[a-z0-9-]+$/).parse((request.params as { scenarioSlug: string }).scenarioSlug);
+      const input = aiPracticeAnswerSchema.parse(request.body);
+      const userClient = createAuthenticatedClient(auth.accessToken!);
+      const { data } = await userClient.auth.getUser(auth.accessToken);
+      const result = await recordAiPracticeAnswer(userClient, data.user!, scenarioSlug, input);
+      return reply.code(201).send(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to save AI practice progress.' });
+      if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This AI practice scenario is not available.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ANSWER', message: 'Choose one of the available responses.' });
+      request.log.error(error, 'AI practice answer failed');
+      return reply.code(500).send({ error: 'AI_PRACTICE_UNAVAILABLE', message: 'We could not save this AI practice attempt.' });
     }
   });
 

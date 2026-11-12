@@ -128,17 +128,25 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
 }
 
 export async function getTrainingSummary(client: SupabaseClient, userId: string) {
-  const [{ data: attempts, error: attemptsError }, { data: modules, error: modulesError }, { data: progress, error: progressError }, { data: riskProfile, error: riskProfileError }] = await Promise.all([
+  const [{ data: attempts, error: attemptsError }, { data: modules, error: modulesError }, progressResult, { data: riskProfile, error: riskProfileError }, aiAttemptsResult] = await Promise.all([
     client.from('training_attempts').select('scenario_id, is_correct, created_at').eq('user_id', userId).order('created_at', { ascending: false }),
     publicContentClient(client).from('training_modules').select('id, slug, title, scenarios(id, risk_dimensions)').eq('is_published', true).eq('is_assessment', false).order('created_at', { ascending: true }),
-    client.from('training_progress').select('module_id, scenarios_attempted, scenarios_correct, completed_at').eq('user_id', userId),
+    client.from('training_progress').select('module_id, scenarios_attempted, scenarios_correct, completed_at, ai_scenarios_attempted, ai_scenarios_correct').eq('user_id', userId).then(async (result) => {
+      if (!result.error) return result;
+      if (!/ai_scenarios_attempted|ai_scenarios_correct|schema cache|does not exist|Could not find/i.test(result.error.message)) return result;
+      return client.from('training_progress').select('module_id, scenarios_attempted, scenarios_correct, completed_at').eq('user_id', userId);
+    }),
     client.from('risk_profiles').select('focus_dimension').eq('user_id', userId).maybeSingle(),
+    client.from('ai_practice_attempts').select('is_correct, created_at').eq('user_id', userId).order('created_at', { ascending: false }),
   ]);
+  const { data: progress, error: progressError } = progressResult;
+  const { data: aiAttempts, error: aiAttemptsError } = aiAttemptsResult;
   if (attemptsError) throw attemptsError;
   if (modulesError) throw modulesError;
   if (progressError) throw progressError;
   if (riskProfileError) throw riskProfileError;
-  const progressByModule = new Map(progress.map((item) => [item.module_id, item]));
+  if (aiAttemptsError && !/ai_practice_attempts|schema cache|does not exist|Could not find the table/i.test(aiAttemptsError.message)) throw aiAttemptsError;
+  const progressByModule = new Map((progress ?? []).map((item) => [item.module_id, item]));
   const moduleByScenarioId = new Map<string, string>();
   for (const module of modules) for (const scenario of Array.isArray(module.scenarios) ? module.scenarios : []) moduleByScenarioId.set(scenario.id, module.id);
   const attemptedByModule = new Map<string, Set<string>>();
@@ -150,17 +158,38 @@ export async function getTrainingSummary(client: SupabaseClient, userId: string)
     attemptedByModule.set(moduleId, attempted);
   }
   const moduleProgress = modules.map((module) => {
-    const saved = progressByModule.get(module.id);
+    const saved = progressByModule.get(module.id) as {
+      scenarios_attempted?: number;
+      scenarios_correct?: number;
+      completed_at?: string | null;
+      ai_scenarios_attempted?: number;
+      ai_scenarios_correct?: number;
+    } | undefined;
     const scenarioCount = Array.isArray(module.scenarios) ? module.scenarios.length : 0;
     const scenariosAttempted = attemptedByModule.get(module.id)?.size ?? 0;
-    return { id: module.id, slug: module.slug, title: module.title, scenarioCount, scenariosAttempted, scenariosCorrect: saved?.scenarios_correct ?? 0, completed: scenarioCount > 0 && scenariosAttempted >= scenarioCount, riskDimensions: Array.isArray(module.scenarios) ? module.scenarios.flatMap((scenario) => scenario.risk_dimensions ?? []) : [] };
+    return {
+      id: module.id,
+      slug: module.slug,
+      title: module.title,
+      scenarioCount,
+      scenariosAttempted,
+      scenariosCorrect: saved?.scenarios_correct ?? 0,
+      completed: scenarioCount > 0 && scenariosAttempted >= scenarioCount,
+      aiScenariosAttempted: saved?.ai_scenarios_attempted ?? 0,
+      aiScenariosCorrect: saved?.ai_scenarios_correct ?? 0,
+      riskDimensions: Array.isArray(module.scenarios) ? module.scenarios.flatMap((scenario) => scenario.risk_dimensions ?? []) : [],
+    };
   });
   const focus = riskProfile?.focus_dimension?.toLowerCase();
   const recommended = moduleProgress.find((module) => !module.completed && focus && module.riskDimensions.some((dimension) => dimension.toLowerCase() === focus)) ?? moduleProgress.find((module) => !module.completed) ?? null;
+  const safeAiAttempts = Array.isArray(aiAttempts) && !aiAttemptsError ? aiAttempts : [];
+  const lastManual = attempts[0]?.created_at ?? null;
+  const lastAi = safeAiAttempts[0]?.created_at ?? null;
+  const lastAttemptAt = [lastManual, lastAi].filter(Boolean).sort().at(-1) ?? null;
   return {
-    attempted: attempts.length,
-    correct: attempts.filter((attempt) => attempt.is_correct).length,
-    lastAttemptAt: attempts[0]?.created_at ?? null,
+    attempted: attempts.length + safeAiAttempts.length,
+    correct: attempts.filter((attempt) => attempt.is_correct).length + safeAiAttempts.filter((attempt) => attempt.is_correct).length,
+    lastAttemptAt,
     modules: moduleProgress.map(({ riskDimensions: _riskDimensions, ...module }) => module),
     recommendation: recommended ? { slug: recommended.slug, title: recommended.title, reason: focus && recommended.riskDimensions.some((dimension) => dimension.toLowerCase() === focus) ? 'focus-area' : 'next-unfinished' } : null,
   };

@@ -201,18 +201,31 @@ export async function listAdminAuditLog(client: SupabaseClient, limit = 50) {
 
 export async function resendUserVerification(client: SupabaseClient, userId: string) {
   await requireMaricsAdmin(client);
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const url = process.env.SUPABASE_URL;
-  if (!serviceKey || !url) throw new Error('ADMIN_VERIFICATION_UNAVAILABLE');
-  const { createClient } = await import('@supabase/supabase-js');
-  const service = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: profile, error: profileError } = await client.from('profiles').select('id').eq('id', userId).maybeSingle();
   if (profileError) throw profileError;
   if (!profile) throw new Error('USER_NOT_FOUND');
+
+  let service;
+  try {
+    service = (await import('../lib/supabase.js')).createServiceClient();
+  } catch {
+    throw new Error('ADMIN_VERIFICATION_UNAVAILABLE');
+  }
+
   const { data: authUser, error: authError } = await service.auth.admin.getUserById(userId);
   if (authError) throw authError;
   if (!authUser.user.email) throw new Error('USER_EMAIL_MISSING');
-  const { error: inviteError } = await service.auth.admin.inviteUserByEmail(authUser.user.email);
-  if (inviteError) throw inviteError;
+  if (authUser.user.email_confirmed_at) throw new Error('USER_ALREADY_VERIFIED');
+
+  const { sendSignupVerificationEmail } = await import('./authEmail.js');
+  try {
+    const result = await sendSignupVerificationEmail(authUser.user.email);
+    if (!result.sent) throw new Error(result.reason === 'already_confirmed' ? 'USER_ALREADY_VERIFIED' : 'USER_NOT_FOUND');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'EMAIL_NOT_CONFIGURED') throw new Error('ADMIN_VERIFICATION_UNAVAILABLE');
+    if (error instanceof Error && error.message === 'VERIFICATION_UNAVAILABLE') throw new Error('ADMIN_VERIFICATION_UNAVAILABLE');
+    if (error instanceof Error && error.message === 'EMAIL_DELIVERY_FAILED') throw error;
+    throw error;
+  }
   await recordAuditLog(client, { action: 'user.verification.resend', targetType: 'user', targetId: userId });
 }

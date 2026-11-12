@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { awarenessStanding, vulnerabilityFromWeakCount } from '../lib/riskStanding.js';
 import { createServiceClient } from '../lib/supabase.js';
 
 export const ASSESSMENT_SCENARIO_ORDER = [
@@ -33,12 +34,20 @@ export function buildRiskProfileFromAnswers(answers: ScoredAnswer[]) {
   const strongDimensions = answers.filter((answer) => answer.isCorrect).map((answer) => answer.dimension);
   const focusDimension = weakDimensions[0] ?? 'Continued practice';
   const strongestDimension = strongDimensions[0] ?? 'Verification habits';
-  const awarenessScore = Math.round((strongDimensions.length / answers.length) * 100);
+  const awarenessScore = answers.length ? Math.round((strongDimensions.length / answers.length) * 100) : 0;
+  const standing = awarenessStanding(awarenessScore);
+  const topicExposure = vulnerabilityFromWeakCount(weakDimensions.length, answers.length);
   return {
     category_scores: categoryScores,
     focus_dimension: focusDimension,
     strongest_dimension: strongestDimension,
     awareness_score: awarenessScore,
+    standing_level: standing.level,
+    standing_label: standing.label,
+    vulnerability_level: standing.vulnerability,
+    topic_exposure: topicExposure.label,
+    strengths_count: strongDimensions.length,
+    weaknesses_count: weakDimensions.length,
   };
 }
 
@@ -100,5 +109,13 @@ export async function submitAssessment(client: SupabaseClient, user: User, input
     updated_at: new Date().toISOString(),
   }).select('strongest_dimension, focus_dimension, awareness_score, category_scores, updated_at').single();
   if (profileError) throw profileError;
-  return profile;
+  return {
+    ...profile,
+    standing_level: profileFields.standing_level,
+    standing_label: profileFields.standing_label,
+    vulnerability_level: profileFields.vulnerability_level,
+    topic_exposure: profileFields.topic_exposure,
+    strengths_count: profileFields.strengths_count,
+    weaknesses_count: profileFields.weaknesses_count,
+  };
 }

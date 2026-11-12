@@ -84,8 +84,26 @@ export async function getOrganizationDashboard(accessToken: string, organization
 
 export async function createInvitation(accessToken: string, organizationId: string, email: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/invitations`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-  if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be created');
-  return (await response.json()).invitation as { email: string; token: string; expiresAt: string };
+  const payload = await response.json().catch(() => ({})) as {
+    invitation?: { email: string; token: string; expiresAt: string };
+    message?: string;
+    emailDelivered?: boolean;
+  };
+  if (payload.invitation?.token) {
+    return {
+      ...payload.invitation,
+      emailDelivered: response.ok ? true : Boolean(payload.emailDelivered),
+      deliveryMessage: response.ok ? null : (payload.message ?? 'Invitation created, but email delivery failed.'),
+    };
+  }
+  if (!response.ok) throw new Error(payload.message ?? 'Invitation could not be created');
+  throw new Error('Invitation could not be created');
+}
+
+export async function previewInvitation(token: string) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/invitations/preview?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be previewed');
+  return (await response.json()).invitation as { organizationName: string; email: string; expiresAt: string; isExpired: boolean; isUsed: boolean };
 }
 
 export async function validateInvitation(accessToken: string, token: string) {
@@ -278,12 +296,25 @@ export async function getAdminAuditLog(accessToken: string) {
 }
 
 export type TrainingModule = { id: string; slug: string; title: Record<string, string>; description: Record<string, string>; learningMaterial: ModuleLearningMaterial; scenarioCount: number; scenarioSlugs: string[]; scenarioTitles?: Array<{ slug: string; title: string }> };
-export type TrainingScenario = { id: string; slug: string; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string; interaction?: string; email?: unknown; sms?: unknown; chat?: unknown; call?: unknown; job?: unknown; payment?: unknown }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
+export type TrainingScenario = { id: string; slug: string; source?: 'manual' | 'ai'; content: Record<string, { channel?: string; sender?: string; message?: string; title?: string; scenario?: string; interaction?: string; email?: unknown; sms?: unknown; chat?: unknown; call?: unknown; job?: unknown; payment?: unknown }>; riskDimensions: string[]; module: { slug: string; title: Record<string, string> }; options: Array<{ option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string> }> };
+export type AiPracticeScenarioSummary = { slug: string; title: string };
 
 export async function submitDemoRequest(input: { name: string; email: string; organizationName?: string; phone?: string; message: string; language?: 'en' | 'af' | 'pt' }) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/demo-requests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   const payload = await response.json().catch(() => ({})) as { message?: string };
   if (!response.ok) throw new Error(payload.message ?? 'Demo request could not be sent');
+}
+
+export async function requestVerificationEmail(email: string) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/auth/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json().catch(() => ({})) as { message?: string };
+  if (!response.ok) throw new Error(payload.message ?? 'Verification email could not be sent');
+  return payload.message ?? 'If that email still needs verification, a confirmation message is on its way. Check inbox and spam.';
 }
 
 export async function getAdminDemoRequests(accessToken: string) {
@@ -303,5 +334,40 @@ export async function getTrainingModules(accessToken: string) {
 export async function getTrainingScenario(accessToken: string, scenarioSlug: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/scenarios/${scenarioSlug}`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Training scenario could not be loaded');
-  return (await response.json()).scenario as TrainingScenario;
+  return { ...(await response.json()).scenario, source: 'manual' as const } as TrainingScenario;
+}
+
+export async function listAiPracticeScenarios(accessToken: string, moduleSlug: string) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules/${moduleSlug}/ai-practice`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'AI practice scenarios could not be loaded');
+  return (await response.json()).scenarios as AiPracticeScenarioSummary[];
+}
+
+export async function generateAiPracticeScenario(accessToken: string, moduleSlug: string, language: 'en' | 'af' | 'pt', difficulty: 'foundation' | 'intermediate' | 'advanced' = 'intermediate') {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules/${moduleSlug}/ai-practice`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language, difficulty }),
+    signal: AbortSignal.timeout(45_000),
+  });
+  const payload = await response.json().catch(() => ({})) as { scenario?: TrainingScenario; message?: string };
+  if (!response.ok || !payload.scenario) throw new Error(payload.message ?? 'AI practice scenario could not be generated');
+  return { ...payload.scenario, source: 'ai' as const };
+}
+
+export async function getAiPracticeScenario(accessToken: string, scenarioSlug: string) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/ai-practice/${scenarioSlug}`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'AI practice scenario could not be loaded');
+  return { ...(await response.json()).scenario, source: 'ai' as const } as TrainingScenario;
+}
+
+export async function saveAiPracticeAnswer(accessToken: string, scenarioSlug: string, optionKey: 'A' | 'B' | 'C' | 'D') {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/ai-practice/${scenarioSlug}/answer`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ optionKey }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error((await response.json()).message ?? 'AI practice answer could not be saved');
+  return (await response.json()) as { isCorrect: boolean; feedback: Record<string, string>; explanation: Record<string, string>; correctOptionKey: 'A' | 'B' | 'C' | 'D'; progress: { scenarios_attempted: number; scenarios_correct: number; ai_scenarios_attempted: number; ai_scenarios_correct: number } };
 }

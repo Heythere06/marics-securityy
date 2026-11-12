@@ -62,6 +62,61 @@ Return ONLY valid JSON with exactly these fields: title, scenario, options, corr
 options must be exactly four objects with keys A, B, C, and D. Make one option clearly safest, but do not make the answer obvious from wording. Keep it appropriate for awareness training, locally realistic, and never request real credentials or personal data.`;
 }
 
+const practiceScenarioSchema = generatedScenarioSchema.extend({
+  channel: z.string().min(1).max(80).optional(),
+  sender: z.string().min(1).max(120).optional(),
+});
+
+export type PracticeScenarioDraft = z.infer<typeof practiceScenarioSchema>;
+
+function buildPracticePrompt(input: {
+  moduleSlug: string;
+  moduleTitle: string;
+  moduleDescription: string;
+  language: string;
+  difficulty: string;
+  threatCategory: string;
+  learningObjectives: string;
+}) {
+  return `Create one fresh cybersecurity awareness practice scenario for learners who already finished the manual scenarios in this module.
+
+Module slug: ${input.moduleSlug}
+Module title: ${input.moduleTitle}
+Module description: ${input.moduleDescription}
+Threat category: ${input.threatCategory}
+Difficulty: ${input.difficulty}
+Learning objectives and safer practice: ${input.learningObjectives}
+Language: ${input.language}
+
+Vary sender identity, channel details, pressure tactics, and difficulty so the learner does not see a repeat of fixed catalog questions. Keep it locally realistic for Southern Africa where natural. Never request real credentials or personal data.
+
+Return ONLY valid JSON with exactly these fields: title, scenario, options, correctOption, explanation, manipulationTechnique, attackerObjective, correctResponse, channel, sender.
+options must be exactly four objects with keys A, B, C, and D. Make one option clearly safest, but do not make the answer obvious from wording.`;
+}
+
+export async function generatePracticeScenarioDraft(input: {
+  moduleSlug: string;
+  moduleTitle: string;
+  moduleDescription: string;
+  language: string;
+  difficulty: string;
+  threatCategory: string;
+  learningObjectives: string;
+}): Promise<PracticeScenarioDraft> {
+  const model = process.env.AI_MODEL ?? 'claude-3-5-haiku-latest';
+  const maxTokens = Number(process.env.AI_MAX_OUTPUT_TOKENS ?? 1200);
+  const message = await getClaude().messages.create({
+    model,
+    max_tokens: maxTokens,
+    temperature: 0.85,
+    system: 'You create safe, realistic cybersecurity awareness practice content. Never provide operational instructions for wrongdoing. Each response must be a new scenario, not a reuse of a previous one.',
+    messages: [{ role: 'user', content: buildPracticePrompt(input) }],
+  });
+  const text = message.content.find((block) => block.type === 'text')?.text;
+  if (!text) throw new Error('AI_INVALID_OUTPUT');
+  return practiceScenarioSchema.parse(extractJson(text));
+}
+
 export async function generateScenario(client: SupabaseClient, user: User, input: z.infer<typeof scenarioGenerationSchema>): Promise<GeneratedScenario> {
   const promptKey = `${input.moduleSlug}:${input.language}:${input.context ?? ''}`;
   const { data: cached, error: cacheError } = await client.from('generated_content').select('content').eq('requested_by', user.id).eq('module_slug', input.moduleSlug).eq('language', input.language).eq('prompt_key', promptKey).maybeSingle();
