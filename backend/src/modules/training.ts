@@ -38,20 +38,26 @@ export async function listPublishedModules(client: SupabaseClient) {
   if (error) throw error;
   return data
     .filter((module) => Array.isArray(module.scenarios) && module.scenarios.length > 0)
-    .map((module) => ({
-      id: module.id,
-      slug: module.slug,
-      title: module.title,
-      description: module.description,
-      learningMaterial: module.learning_material,
-      scenarioCount: module.scenarios.length,
-      scenarioSlugs: module.scenarios.map((scenario) => scenario.slug).filter((slug): slug is string => Boolean(slug)),
-      scenarioTitles: module.scenarios.map((scenario) => {
-        const content = scenario.content as Record<string, { title?: string }> | null;
-        const title = content?.en?.title ?? content?.af?.title ?? content?.pt?.title ?? scenario.slug;
-        return { slug: scenario.slug, title: title ?? scenario.slug };
-      }),
-    }));
+    .map((module) => {
+      const scenarios = [...module.scenarios]
+        .filter((scenario) => Boolean(scenario.slug))
+        .map((scenario) => {
+          const content = scenario.content as Record<string, { title?: string }> | null;
+          const title = content?.en?.title ?? content?.af?.title ?? content?.pt?.title ?? scenario.slug.replace(/-/g, ' ');
+          return { slug: scenario.slug as string, title };
+        })
+        .sort((left, right) => left.title.localeCompare(right.title, undefined, { sensitivity: 'base', numeric: true }));
+      return {
+        id: module.id,
+        slug: module.slug,
+        title: module.title,
+        description: module.description,
+        learningMaterial: module.learning_material,
+        scenarioCount: scenarios.length,
+        scenarioSlugs: scenarios.map((scenario) => scenario.slug),
+        scenarioTitles: scenarios,
+      };
+    });
 }
 
 export async function getScenario(client: SupabaseClient, scenarioSlug: string) {

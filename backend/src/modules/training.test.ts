@@ -73,7 +73,7 @@ describe('localized module learning material', () => {
       const [module] = await listPublishedModules(client as never);
       expect(module.learningMaterial).toEqual(learningMaterial);
       expect(module.scenarioSlugs).toEqual(['scenario-a']);
-      expect(module.scenarioTitles).toEqual([{ slug: 'scenario-a', title: 'scenario-a' }]);
+      expect(module.scenarioTitles).toEqual([{ slug: 'scenario-a', title: 'scenario a' }]);
     } finally {
       if (savedServiceKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceKey;
     }

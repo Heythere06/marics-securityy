@@ -828,7 +828,7 @@ function Overview({ displayName, onboardingComplete, riskProfile, trainingSummar
   const progressBySlug = new Map(trainingSummary.modules.map((module) => [module.slug, module]));
   const modules = trainingModules.map((module, index) => {
     const progress = progressBySlug.get(module.slug);
-    return { title: module.title.en ?? module.slug, label: String(index + 1).padStart(2, '0'), meta: `${progress?.scenariosAttempted ?? 0} / ${module.scenarioCount} scenarios`, tone: ['rust', 'blue', 'blue'][index % 3] };
+    return { title: module.title.en ?? module.slug, label: String(index + 1).padStart(2, '0'), meta: `${progress?.scenariosAttempted ?? 0} / ${module.scenarioCount} scenarios`, tone: ['rust', 'blue', 'sage', 'gold', 'plum', 'teal'][index % 6] };
   });
   return <section className="content"><Header eyebrow={today} title={`Good morning, ${firstName}.`} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." /><div className="overview-grid"><article className="awareness-card"><div><p className="card-kicker">OVERALL AWARENESS</p><div className="score-line"><strong>{onboardingComplete ? 'Profile ready' : 'Not assessed'}</strong><span>{onboardingComplete && riskProfile ? `Strongest: ${riskProfile.strongest_dimension}` : 'Complete onboarding first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '&#8212;'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Complete your baseline'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten scenario-style questions map your strongest habits and focus areas.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start assessment'} <b>&#8594;</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAK SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'weak').length}</strong></article><article><span>STRONG SIGNALS</span><strong>{Object.values(riskProfile.category_scores ?? {}).filter((score) => score === 'strong').length}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
 }
@@ -856,12 +856,12 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
 
   return <section className="content training-view">
     <Header eyebrow="PERSONAL SECURITY / PRACTICE" title={moduleTitle} detail={selectedModule?.description[language] ?? selectedModule?.description.en ?? 'Choose a module, learn the signals, then practice the decisions.'} />
-    {modules.length > 0 && <nav className="training-catalog" aria-label="Published training modules">{modules.map((module) => {
+    {modules.length > 0 && <nav className="training-catalog" aria-label="Published training modules">{modules.map((module, index) => {
       const moduleProgress = summary.modules.find((entry) => entry.slug === module.slug);
       const attempted = moduleProgress?.scenariosAttempted ?? 0;
       const completed = moduleProgress?.completed ?? false;
       const percent = module.scenarioCount ? Math.min(100, Math.round((attempted / module.scenarioCount) * 100)) : 0;
-      return <button type="button" key={module.id} aria-pressed={module.slug === selectedModule?.slug} className={`training-module-card${module.slug === selectedModule?.slug ? ' selected' : ''}`} onClick={() => onModuleSelect(module.slug)}>
+      return <button type="button" key={module.id} aria-pressed={module.slug === selectedModule?.slug} className={`training-module-card tone-${index % 6}${module.slug === selectedModule?.slug ? ' selected' : ''}`} onClick={() => onModuleSelect(module.slug)}>
         <span className="training-module-status">{completed ? 'COMPLETE' : `${attempted} / ${module.scenarioCount} PRACTICED`}</span>
         <strong>{module.title[language] ?? module.title.en ?? module.slug}</strong>
         <span className="training-module-description">{module.description[language] ?? module.description.en}</span>
@@ -879,7 +879,19 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
         <div className="training-learning-heading"><div><p className="card-kicker">BEFORE YOU PRACTICE</p><h2 id="learning-title">What to know</h2></div>{materialLanguage !== language && material && <span>Learning material in English</span>}</div>
         {material ? <div className="training-learning-grid"><article><p className="card-kicker">WHY IT WORKS</p><p>{material.whyItMatters}</p></article><article><p className="card-kicker">WARNING SIGNS</p><p>{material.warningSigns}</p></article><article><p className="card-kicker">SAFER PRACTICE</p><p>{material.bestPractice}</p></article></div> : <p className="training-material-empty">Learning material is being prepared for this module.</p>}
       </section>
-      {selectedModule.scenarioSlugs.length > 0 && <label className="scenario-picker">Choose a scenario<select value={selectedScenarioSlug ?? ''} onChange={(event) => onScenarioSelect(event.target.value)}>{selectedModule.scenarioSlugs.map((slug) => <option key={slug} value={slug}>{selectedModule.scenarioTitles?.find((entry) => entry.slug === slug)?.title ?? slug.replace(/-/g, ' ')}</option>)}</select></label>}
+      {selectedModule.scenarioSlugs.length > 0 && <div className="scenario-chooser">
+        <div className="scenario-chooser-heading"><p className="card-kicker">SCENARIOS</p><h2>Choose a situation to practice</h2></div>
+        <div className="scenario-grid" role="listbox" aria-label="Training scenarios">
+          {selectedModule.scenarioSlugs.map((slug, index) => {
+            const title = selectedModule.scenarioTitles?.find((entry) => entry.slug === slug)?.title ?? slug.replace(/-/g, ' ');
+            const selected = slug === selectedScenarioSlug;
+            return <button type="button" role="option" aria-selected={selected} key={slug} className={`scenario-choice tone-${index % 6}${selected ? ' selected' : ''}`} onClick={() => onScenarioSelect(slug)}>
+              <span className="scenario-choice-index">{String(index + 1).padStart(2, '0')}</span>
+              <strong>{title}</strong>
+            </button>;
+          })}
+        </div>
+      </div>}
       {loading && <p className="page-state" role="status">Loading scenario...</p>}
       {error && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" type="button" onClick={() => selectedScenarioSlug && onScenarioSelect(selectedScenarioSlug)}>Retry scenario</button></div>}
       {!loading && !error && selectedModule.scenarioSlugs.length === 0 && <p className="training-material-empty">Scenarios for this module are being prepared.</p>}
