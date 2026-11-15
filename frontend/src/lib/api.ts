@@ -4,6 +4,20 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   return response;
 }
 
+export class ApiError extends Error {
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(message: string, code: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export type CertificationGate = { questionCount: number; passPercent: number; timeLimitMinutes: number };
+
 export type OnboardingScenario = {
   slug: string;
   content: Record<string, { title?: string; scenario?: string }>;
@@ -158,8 +172,19 @@ export type UserCertificate = { id: string; verification_id: string; module_id: 
 
 export async function getUserCertificates(accessToken: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certificates`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
-  const payload = await response.json().catch(() => ({})) as { certificates?: UserCertificate[]; message?: string };
-  if (!response.ok || !payload.certificates) throw new Error(payload.message ?? 'Certificates could not be loaded');
+  const payload = await response.json().catch(() => ({})) as {
+    certificates?: UserCertificate[];
+    message?: string;
+    error?: string;
+    gate?: CertificationGate;
+  };
+  if (!response.ok || !payload.certificates) {
+    throw new ApiError(
+      payload.message ?? 'Certificates could not be loaded',
+      payload.error ?? 'CERTIFICATES_UNAVAILABLE',
+      payload.gate ? { gate: payload.gate } : undefined,
+    );
+  }
   return payload.certificates;
 }
 
@@ -168,15 +193,23 @@ export type CertificationAssessment = { assessmentId: string; expiresAt: string;
 
 export async function startCertificationAssessment(accessToken: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certification-assessment/start`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } });
-  const payload = await response.json().catch(() => ({})) as CertificationAssessment & { message?: string };
-  if (!response.ok) throw new Error(payload.message ?? 'Certification assessment could not be started');
+  const payload = await response.json().catch(() => ({})) as CertificationAssessment & { message?: string; error?: string; gate?: CertificationGate };
+  if (!response.ok) {
+    throw new ApiError(
+      payload.message ?? 'Certification assessment could not be started',
+      payload.error ?? 'CERTIFICATION_UNAVAILABLE',
+      payload.gate ? { gate: payload.gate } : undefined,
+    );
+  }
   return payload;
 }
 
 export async function submitCertificationAssessment(accessToken: string, assessmentId: string, answers: Array<{ scenarioId: string; optionKey: 'A' | 'B' | 'C' | 'D' }>) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/certification-assessment/submit`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ assessmentId, answers }) });
-  const payload = await response.json().catch(() => ({})) as { score?: number; passed?: boolean; message?: string };
-  if (!response.ok) throw new Error(payload.message ?? 'Certification assessment could not be submitted');
+  const payload = await response.json().catch(() => ({})) as { score?: number; passed?: boolean; passPercent?: number; message?: string; error?: string };
+  if (!response.ok) {
+    throw new ApiError(payload.message ?? 'Certification assessment could not be submitted', payload.error ?? 'CERTIFICATION_UNAVAILABLE');
+  }
   return payload as { score: number; passed: boolean; passPercent: number };
 }
 

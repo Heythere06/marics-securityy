@@ -39,6 +39,15 @@
 
 **Apply migration** `202611150002_org_admin_hardening.sql` on Supabase.
 
+### Batch 4 status (Certification UX) — landed in repo
+
+| ID | Status |
+|----|--------|
+| FE-004 timer dead-end | **Fixed** — auto-submit if complete; otherwise Start new attempt |
+| FE-032 stringly gate | **Fixed** — `CERTIFICATION_REQUIRED` via `ApiError.code` |
+| FE-031 hardcode 80%/30Q | **Fixed** — bind `gate` / assessment `passPercent` + `timeLimitMinutes` |
+| BE-036 already submitted | **Fixed** — maps to HTTP 409 |
+
 ### Severity key
 
 | Level | Meaning |

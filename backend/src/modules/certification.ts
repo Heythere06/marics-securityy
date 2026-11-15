@@ -2,9 +2,15 @@ import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { requireScoringClient } from '../lib/supabase.js';
 
-const QUESTION_COUNT = 30;
-const PASS_PERCENT = 80;
-const TIME_LIMIT_MINUTES = 20;
+export const QUESTION_COUNT = 30;
+export const PASS_PERCENT = 80;
+export const TIME_LIMIT_MINUTES = 20;
+
+export const CERTIFICATION_GATE = {
+  questionCount: QUESTION_COUNT,
+  passPercent: PASS_PERCENT,
+  timeLimitMinutes: TIME_LIMIT_MINUTES,
+} as const;
 
 export const certificationSubmissionSchema = z.object({
   assessmentId: z.string().uuid(),

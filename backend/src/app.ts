@@ -45,7 +45,7 @@ import {
 } from './modules/admin.js';
 import { getOrganizationReportCsv } from './modules/organizations.js';
 import { ensureUserCertificates, listUserCertificates, verifyCertificate } from './modules/certificates.js';
-import { certificationSubmissionSchema, hasPassedCertification, startCertificationAssessment, submitCertificationAssessment } from './modules/certification.js';
+import { CERTIFICATION_GATE, certificationSubmissionSchema, hasPassedCertification, startCertificationAssessment, submitCertificationAssessment } from './modules/certification.js';
 import { createDemoRequest, demoRequestSchema, listDemoRequests } from './modules/demo.js';
 import { requestSignupVerificationEmail, resendVerificationSchema } from './modules/authEmail.js';
 
@@ -800,7 +800,13 @@ export function buildApp() {
     try {
       const auth = await requireUser(request);
       const client = createAuthenticatedClient(auth.accessToken!);
-      if (!(await hasPassedCertification(client, auth.userId!))) return reply.code(403).send({ error: 'CERTIFICATION_REQUIRED', message: 'Pass the 30-question certification assessment before accessing certificates.' });
+      if (!(await hasPassedCertification(client, auth.userId!))) {
+        return reply.code(403).send({
+          error: 'CERTIFICATION_REQUIRED',
+          message: `Pass the ${CERTIFICATION_GATE.questionCount}-question certification assessment before accessing certificates.`,
+          gate: CERTIFICATION_GATE,
+        });
+      }
       await ensureUserCertificates(client, auth.userId!);
       const certificates = await listUserCertificates(client, auth.userId!);
       return reply.send({ certificates });
@@ -818,7 +824,7 @@ export function buildApp() {
       return reply.send(await startCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!));
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to start the certification assessment.' });
-      if (error instanceof Error && error.message === 'TRAINING_REQUIRED') return reply.code(403).send({ error: 'TRAINING_REQUIRED', message: 'Complete every published training module before starting the certification assessment.' });
+      if (error instanceof Error && error.message === 'TRAINING_REQUIRED') return reply.code(403).send({ error: 'TRAINING_REQUIRED', message: 'Complete every published training module before starting the certification assessment.', gate: CERTIFICATION_GATE });
       if (error instanceof Error && error.message === 'CERTIFICATION_QUESTION_POOL_TOO_SMALL') return reply.code(503).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'The certification question bank is not ready yet.' });
       request.log.error(error, 'Certification assessment start failed');
       return reply.code(500).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'We could not start the certification assessment.' });
@@ -833,8 +839,9 @@ export function buildApp() {
       return reply.send(await submitCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!, input));
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to submit the certification assessment.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CERTIFICATION', message: 'Answer all 30 certification questions.' });
-      if (error instanceof Error && error.message === 'CERTIFICATION_EXPIRED') return reply.code(400).send({ error: 'CERTIFICATION_EXPIRED', message: 'Your 20-minute assessment expired. Please start again.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CERTIFICATION', message: `Answer all ${CERTIFICATION_GATE.questionCount} certification questions.` });
+      if (error instanceof Error && error.message === 'CERTIFICATION_EXPIRED') return reply.code(400).send({ error: 'CERTIFICATION_EXPIRED', message: `Your ${CERTIFICATION_GATE.timeLimitMinutes}-minute assessment expired. Please start again.` });
+      if (error instanceof Error && error.message === 'CERTIFICATION_ALREADY_SUBMITTED') return reply.code(409).send({ error: 'CERTIFICATION_ALREADY_SUBMITTED', message: 'This assessment was already submitted.' });
       request.log.error(error, 'Certification assessment submission failed');
       return reply.code(500).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'We could not save your certification assessment.' });
     }
