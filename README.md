@@ -22,7 +22,7 @@ The frontend runs on `http://localhost:5173` and the API on `http://localhost:40
 
 The current repository includes database-backed onboarding assessment, risk profiles, interactive training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, public demo requests, SMTP/Resend invitations, opening-quiz standing levels, and **user-facing Claude AI practice** after manual module scenarios are complete. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes.
 
-Supabase migrations must be applied in filename order through `202611150002_org_admin_hardening.sql` (AI practice, CIA integrity hardening, and org-admin UPDATE/DELETE RLS plus `default_employee_language`). Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
+Supabase migrations must be applied in filename order through `202611150003_cert_binding_and_ai_refund.sql` (CIA integrity, org-admin RLS, certification question binding, and AI follow-up quota refund). Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
 
 ## Supabase setup
 

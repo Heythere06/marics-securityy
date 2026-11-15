@@ -80,6 +80,27 @@
 | BE-025 prod CORS localhost default | **Fixed** — `CORS_ORIGINS_REQUIRED` fail-fast |
 | BE-039 cert verify rate limit | **Fixed** — 40 requests / hour on public verify |
 
+### Batch 8 status (Cert integrity + AI quota) — landed in repo
+
+| ID | Status |
+|----|--------|
+| BE-015 start/submit question mismatch | **Fixed** — `question_ids` bound at start |
+| BE-016 unlimited open assessments | **Fixed** — reuse active or expire others |
+| BE-017 AI why burns quota on failure | **Fixed** — `refund_ai_followup_request` after Claude errors |
+| BE-018 risk_profiles self-write | **Already fixed** in Batch 1 read-only RLS |
+
+**Apply migration** `202611150003_cert_binding_and_ai_refund.sql` on Supabase.
+
+### Batch 9 status (Invite integrity + admin safety) — landed in repo
+
+| ID | Status |
+|----|--------|
+| BE-010 accept invite race | **Fixed** — claim invitation before membership; pgcrypto-only fallback |
+| BE-011 create invite fallback | **Fixed** — service-role fallback only on pgcrypto errors |
+| FE-008 learning material wipe | **Fixed** — merge all languages before PATCH |
+| FE-042 admin role promote | **Fixed** — stronger confirm for privileged roles |
+| FE-011 missing Supabase env | **Fixed** — blocking config alert; no silent auth no-op |
+
 ### Severity key
 
 | Level | Meaning |

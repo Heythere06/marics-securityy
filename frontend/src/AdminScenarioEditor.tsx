@@ -98,7 +98,10 @@ export function AdminScenarioEditor({ accessToken, modules, onMessage, onModuleU
         title: module.title,
         description: module.description,
         published: module.published,
-        learningMaterial: { [learningLanguage]: learningDraft },
+        learningMaterial: {
+          ...(savedLearningMaterial[module.id] ?? module.learningMaterial ?? {}),
+          [learningLanguage]: learningDraft,
+        },
       });
       setSavedLearningMaterial((current) => ({ ...current, [module.id]: updatedMaterial }));
       onMessage(`Learning material saved in ${learningLanguage.toUpperCase()}.`);

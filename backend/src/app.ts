@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
-import { explainScenarioWhy, generateScenario, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
+import { explainScenarioWhy, generateScenario, refundScenarioWhy, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
 import { aiPracticeAnswerSchema, aiPracticeGenerateSchema, generateAiPracticeScenario, getAiPracticeScenario, listAiPracticeScenarios, recordAiPracticeAnswer } from './modules/aiPractice.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, previewInvitationByToken, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
@@ -672,13 +672,20 @@ export function buildApp() {
   });
 
   app.post('/api/ai/scenario-why', async (request, reply) => {
+    let reservedForUser: string | null = null;
     try {
       const auth = await requireUser(request);
       const input = scenarioWhySchema.parse(request.body);
       await reserveScenarioWhy(auth.userId!);
+      reservedForUser = auth.userId!;
       const explanation = await explainScenarioWhy(input);
       return reply.send({ explanation });
     } catch (error) {
+      if (reservedForUser) {
+        await refundScenarioWhy(reservedForUser).catch((refundError) => {
+          request.log.warn(refundError, 'Failed to refund AI follow-up reservation after explanation error');
+        });
+      }
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to request an explanation.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION_CONTEXT', message: 'A valid scenario answer is required for a focused explanation.' });
       if (error instanceof Error && error.message === 'AI_FOLLOWUP_DAILY_LIMIT') return reply.code(429).send({ error: 'AI_FOLLOWUP_DAILY_LIMIT', message: 'You have reached today’s limit of 10 follow-up questions. Try again tomorrow.' });

@@ -49,8 +49,8 @@ export async function createInvitation(client: SupabaseClient, organizationId: s
   let invitation: { id: string; email: string; token: string; expiresAt: string };
   const { data, error } = await client.rpc('create_organization_invitation', { target_org: organizationId, target_email: email });
   if (error) {
-    // Supabase often installs pgcrypto in the extensions schema; older RPCs with
-    // search_path=public fail on gen_random_bytes. Fall back to a service-role insert.
+    // Only fall back when pgcrypto/digest is missing from the RPC search_path.
+    if (!isPgcryptoFallbackError(error)) throw error;
     invitation = await createInvitationWithServiceRole(organizationId, email, authUser.user.id);
   } else {
     invitation = data as { id: string; email: string; token: string; expiresAt: string };
@@ -155,11 +155,23 @@ export async function getInvitationByToken(client: SupabaseClient, rawToken: str
   };
 }
 
+function isPgcryptoFallbackError(error: { message?: string; details?: string; hint?: string; code?: string }) {
+  const detail = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''} ${error.code ?? ''}`;
+  return /gen_random_bytes|digest\(|pgcrypto|42883|PGRST202|function .* does not exist/i.test(detail);
+}
+
 export async function acceptInvitation(client: SupabaseClient, token: string) {
   const { data, error } = await client.rpc('accept_organization_invitation', { raw_token: token });
   if (!error) return data as { organizationId: string };
 
-  // Fallback when digest()/pgcrypto is not visible on the RPC search_path.
+  const detail = `${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`.toUpperCase();
+  if (detail.includes('INVITATION_EMAIL_MISMATCH')) throw new Error('INVITATION_EMAIL_MISMATCH');
+  if (detail.includes('INVITATION_INVALID') || detail.includes('AUTH_REQUIRED')) {
+    throw new Error(detail.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'INVITATION_INVALID');
+  }
+  // Fallback only when digest()/pgcrypto is not visible on the RPC search_path.
+  if (!isPgcryptoFallbackError(error)) throw error;
+
   const { data: authUser, error: authError } = await client.auth.getUser();
   if (authError || !authUser.user) throw new Error('AUTH_REQUIRED');
 
@@ -181,18 +193,22 @@ export async function acceptInvitation(client: SupabaseClient, token: string) {
     throw new Error('INVITATION_EMAIL_MISMATCH');
   }
 
+  // Claim the invitation first so concurrent accepts cannot both succeed.
+  const { data: claimed, error: markError } = await service.from('organization_invitations')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('id', invitation.id)
+    .is('accepted_at', null)
+    .select('id')
+    .maybeSingle();
+  if (markError) throw markError;
+  if (!claimed) throw new Error('INVITATION_INVALID');
+
   const { error: membershipError } = await service.from('organization_memberships').upsert({
     organization_id: invitation.organization_id,
     user_id: authUser.user.id,
     is_admin: false,
   }, { onConflict: 'organization_id,user_id', ignoreDuplicates: true });
   if (membershipError) throw membershipError;
-
-  const { error: markError } = await service.from('organization_invitations')
-    .update({ accepted_at: new Date().toISOString() })
-    .eq('id', invitation.id)
-    .is('accepted_at', null);
-  if (markError) throw markError;
 
   const { error: promoteError } = await service.rpc('promote_user_to_employee', { target_user: authUser.user.id });
   if (promoteError) throw promoteError;

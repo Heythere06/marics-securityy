@@ -162,3 +162,10 @@ export async function reserveScenarioWhy(userId: string) {
   if (error.message.includes('AI_FOLLOWUP_LIMIT_CONFIG_INVALID')) throw new Error('AI_FOLLOWUP_LIMIT_CONFIG_INVALID');
   throw error;
 }
+
+export async function refundScenarioWhy(userId: string) {
+  const { error } = await createServiceClient().rpc('refund_ai_followup_request', { target_user: userId });
+  if (!error) return;
+  if (error.code === 'PGRST202' || error.message.includes('refund_ai_followup_request')) return;
+  throw error;
+}

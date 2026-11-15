@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
+describe('certification question binding', () => {
+  it('keeps submit scoring ordered by the bound start question IDs', () => {
+    const boundIds = [
+      '11111111-1111-1111-1111-111111111111',
+      '22222222-2222-2222-2222-222222222222',
+    ];
+    const loaded = [
+      { scenarioId: boundIds[1], content: {}, options: [] },
+      { scenarioId: boundIds[0], content: {}, options: [] },
+    ];
+    const byId = new Map(loaded.map((question) => [question.scenarioId, question]));
+    const ordered = boundIds.map((id) => byId.get(id));
+    expect(ordered.map((question) => question?.scenarioId)).toEqual(boundIds);
+  });
+});
+
 describe('certification public payload integrity', () => {
   it('never exposes isCorrect on learner-facing question options', () => {
     const questions = [

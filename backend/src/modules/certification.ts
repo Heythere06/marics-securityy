@@ -35,6 +35,23 @@ async function hasCompletedTraining(client: SupabaseClient, userId: string) {
   return (modules ?? []).length > 0 && (modules ?? []).every((module) => completed.has(module.id));
 }
 
+function mapScenarioRows(data: Array<{
+  id: string;
+  content: Record<string, { title?: string; scenario?: string }>;
+  scenario_options: Array<{ id: string; option_key: 'A' | 'B' | 'C' | 'D'; content: Record<string, string>; is_correct: boolean }>;
+}>): CertificationQuestion[] {
+  return data.map((scenario) => ({
+    scenarioId: scenario.id,
+    content: scenario.content,
+    options: scenario.scenario_options.map((option) => ({
+      id: option.id,
+      optionKey: option.option_key,
+      content: option.content,
+      isCorrect: option.is_correct,
+    })),
+  }));
+}
+
 async function loadQuestions(client: SupabaseClient): Promise<CertificationQuestion[]> {
   const scoring = requireScoringClient(client);
   const { data, error } = await scoring
@@ -46,11 +63,24 @@ async function loadQuestions(client: SupabaseClient): Promise<CertificationQuest
     .limit(QUESTION_COUNT);
   if (error) throw error;
   if (!data || data.length < QUESTION_COUNT) throw new Error('CERTIFICATION_QUESTION_POOL_TOO_SMALL');
-  return data.map((scenario) => ({
-    scenarioId: scenario.id,
-    content: scenario.content,
-    options: scenario.scenario_options.map((option) => ({ id: option.id, optionKey: option.option_key, content: option.content, isCorrect: option.is_correct })),
-  }));
+  return mapScenarioRows(data);
+}
+
+async function loadQuestionsByIds(client: SupabaseClient, questionIds: string[]): Promise<CertificationQuestion[]> {
+  const scoring = requireScoringClient(client);
+  if (questionIds.length !== QUESTION_COUNT) throw new Error('CERTIFICATION_QUESTION_INVALID');
+  const { data, error } = await scoring
+    .from('scenarios')
+    .select('id, content, scenario_options(id, option_key, content, is_correct)')
+    .in('id', questionIds);
+  if (error) throw error;
+  if (!data || data.length !== QUESTION_COUNT) throw new Error('CERTIFICATION_QUESTION_INVALID');
+  const byId = new Map(mapScenarioRows(data).map((question) => [question.scenarioId, question]));
+  return questionIds.map((id) => {
+    const question = byId.get(id);
+    if (!question) throw new Error('CERTIFICATION_QUESTION_INVALID');
+    return question;
+  });
 }
 
 function toPublicQuestions(questions: CertificationQuestion[]) {
@@ -63,9 +93,48 @@ function toPublicQuestions(questions: CertificationQuestion[]) {
 
 export async function startCertificationAssessment(client: SupabaseClient, user: User) {
   if (!(await hasCompletedTraining(client, user.id))) throw new Error('TRAINING_REQUIRED');
+  const scoring = requireScoringClient(client);
+  const nowIso = new Date().toISOString();
+
+  const { data: active, error: activeError } = await client
+    .from('certification_assessments')
+    .select('id, expires_at, question_ids')
+    .eq('user_id', user.id)
+    .is('completed_at', null)
+    .gt('expires_at', nowIso)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (activeError) throw activeError;
+
+  if (active?.question_ids && Array.isArray(active.question_ids) && active.question_ids.length === QUESTION_COUNT) {
+    const questions = await loadQuestionsByIds(client, active.question_ids as string[]);
+    return {
+      assessmentId: active.id,
+      expiresAt: active.expires_at,
+      timeLimitMinutes: TIME_LIMIT_MINUTES,
+      passPercent: PASS_PERCENT,
+      questions: toPublicQuestions(questions),
+    };
+  }
+
+  // Expire any other open attempts so only one active assessment exists.
+  const { error: expireError } = await scoring
+    .from('certification_assessments')
+    .update({ expires_at: nowIso })
+    .eq('user_id', user.id)
+    .is('completed_at', null)
+    .gt('expires_at', nowIso);
+  if (expireError) throw expireError;
+
   const questions = await loadQuestions(client);
+  const questionIds = questions.map((question) => question.scenarioId);
   const expiresAt = new Date(Date.now() + TIME_LIMIT_MINUTES * 60_000).toISOString();
-  const { data: assessment, error } = await client.from('certification_assessments').insert({ user_id: user.id, expires_at: expiresAt }).select('id, expires_at').single();
+  const { data: assessment, error } = await scoring
+    .from('certification_assessments')
+    .insert({ user_id: user.id, expires_at: expiresAt, question_ids: questionIds })
+    .select('id, expires_at')
+    .single();
   if (error) throw error;
   return {
     assessmentId: assessment.id,
@@ -78,14 +147,27 @@ export async function startCertificationAssessment(client: SupabaseClient, user:
 
 export async function submitCertificationAssessment(client: SupabaseClient, user: User, input: z.infer<typeof certificationSubmissionSchema>) {
   const scoring = requireScoringClient(client);
-  const { data: assessment, error: assessmentError } = await client.from('certification_assessments').select('id, expires_at, completed_at').eq('id', input.assessmentId).eq('user_id', user.id).single();
+  const { data: assessment, error: assessmentError } = await client
+    .from('certification_assessments')
+    .select('id, expires_at, completed_at, question_ids')
+    .eq('id', input.assessmentId)
+    .eq('user_id', user.id)
+    .single();
   if (assessmentError) throw assessmentError;
   if (assessment.completed_at) throw new Error('CERTIFICATION_ALREADY_SUBMITTED');
   if (Date.now() > Date.parse(assessment.expires_at)) throw new Error('CERTIFICATION_EXPIRED');
 
-  const questions = await loadQuestions(client);
+  const boundIds = Array.isArray(assessment.question_ids) ? (assessment.question_ids as string[]) : [];
+  const questions = boundIds.length === QUESTION_COUNT
+    ? await loadQuestionsByIds(client, boundIds)
+    : await loadQuestions(client);
   const questionById = new Map(questions.map((question) => [question.scenarioId, question]));
   if (input.answers.some((answer) => !questionById.has(answer.scenarioId))) throw new Error('CERTIFICATION_QUESTION_INVALID');
+  if (boundIds.length === QUESTION_COUNT) {
+    const answerIds = input.answers.map((answer) => answer.scenarioId);
+    const sameSet = boundIds.length === answerIds.length && boundIds.every((id) => answerIds.includes(id));
+    if (!sameSet) throw new Error('CERTIFICATION_QUESTION_INVALID');
+  }
   const scored = input.answers.map((answer) => {
     const question = questionById.get(answer.scenarioId);
     if (!question) throw new Error('CERTIFICATION_QUESTION_INVALID');
