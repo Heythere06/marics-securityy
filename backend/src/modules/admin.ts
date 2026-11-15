@@ -68,8 +68,17 @@ export async function createAdminModule(client: SupabaseClient, input: z.infer<t
 export async function createAdminScenario(client: SupabaseClient, input: z.infer<typeof adminScenarioSchema>) {
   if (input.scenarioId) {
     const service = createServiceClient();
-    const { data: updated, error: updateError } = await service.from('scenarios').update({ slug: input.slug, content: input.content, risk_dimensions: input.riskDimensions }).eq('id', input.scenarioId).select('id, module_id, slug').single();
-    if (updateError) throw updateError;
+    const { data: updated, error: updateError } = await service
+      .from('scenarios')
+      .update({ slug: input.slug, content: input.content, risk_dimensions: input.riskDimensions })
+      .eq('id', input.scenarioId)
+      .eq('module_id', input.moduleId)
+      .select('id, module_id, slug')
+      .single();
+    if (updateError) {
+      if (updateError.code === 'PGRST116') throw new Error('SCENARIO_MODULE_MISMATCH');
+      throw updateError;
+    }
     const { error: deleteError } = await service.from('scenario_options').delete().eq('scenario_id', input.scenarioId);
     if (deleteError) throw deleteError;
     const { error: insertError } = await service.from('scenario_options').insert(input.options.map((option, index) => ({ scenario_id: input.scenarioId, option_key: String.fromCharCode(65 + index), content: option.content, is_correct: option.isCorrect, feedback: option.feedback })));

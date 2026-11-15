@@ -12,6 +12,7 @@ const AdminScenarioEditor = lazy(() => import('./AdminScenarioEditor').then(({ A
 
 type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings' | 'audit' | 'demo-requests' | 'help';
 type AppRole = 'individual' | 'employee' | 'organization_admin' | 'marics_admin';
+type OrgMembership = { id: string; name: string; isAdmin: boolean; defaultEmployeeLanguage?: 'en' | 'af' | 'pt' };
 type TrainingOptionKey = 'A' | 'B' | 'C' | 'D';
 
 function App() {
@@ -50,7 +51,7 @@ function App() {
   const [trainingSummary, setTrainingSummary] = useState<TrainingSummary>({ attempted: 0, correct: 0, lastAttemptAt: null, modules: [], recommendation: null });
   const [aiPracticeByModule, setAiPracticeByModule] = useState<Record<string, AiPracticeScenarioSummary[]>>({});
   const [aiPracticeGenerating, setAiPracticeGenerating] = useState(false);
-  const [organizations, setOrganizations] = useState<Array<{ id: string; name: string; isAdmin: boolean }>>([]);
+  const [organizations, setOrganizations] = useState<OrgMembership[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
   const [profileReady, setProfileReady] = useState(false);
@@ -810,7 +811,7 @@ function formatAuthError(error: { message: string; code?: string; status?: numbe
   return error.message || 'We could not complete that request. Check your details and try again.';
 }
 
-function EmployeeDashboard({ displayName, organizations, riskProfile, trainingSummary, onAssessment, onTraining }: { displayName: string; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; riskProfile: RiskProfile | null; trainingSummary: { attempted: number; correct: number; lastAttemptAt: string | null; recommendation?: { slug: string; title: Record<string, string> } | null }; onAssessment: () => void; onTraining: () => void }) {
+function EmployeeDashboard({ displayName, organizations, riskProfile, trainingSummary, onAssessment, onTraining }: { displayName: string; organizations: OrgMembership[]; riskProfile: RiskProfile | null; trainingSummary: { attempted: number; correct: number; lastAttemptAt: string | null; recommendation?: { slug: string; title: Record<string, string> } | null }; onAssessment: () => void; onTraining: () => void }) {
   const membershipLabel = organizations.map((organization) => organization.name).filter(Boolean).join(' · ');
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const recommendedTitle = trainingSummary.recommendation?.title.en ?? trainingSummary.recommendation?.slug;
@@ -982,8 +983,8 @@ function SettingsView({ email, displayName, language, accessToken, onSaved, orga
   onSaved: (name: string, language: Language) => void;
   organization?: {
     session: Session;
-    organizations: Array<{ id: string; name: string; isAdmin: boolean }>;
-    setOrganizations: Dispatch<SetStateAction<Array<{ id: string; name: string; isAdmin: boolean }>>>;
+    organizations: OrgMembership[];
+    setOrganizations: Dispatch<SetStateAction<OrgMembership[]>>;
   } | null;
 }) {
   const [fullName, setFullName] = useState(displayName);
@@ -1267,9 +1268,9 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('') || 'U';
 }
 
-function OrganizationWorkspace({ session, organizations, setOrganizations, onOrganizationCreated }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; setOrganizations: Dispatch<SetStateAction<Array<{ id: string; name: string; isAdmin: boolean }>>>; onOrganizationCreated?: () => void }) {
+function OrganizationWorkspace({ session, organizations, setOrganizations, onOrganizationCreated }: { session: Session; organizations: OrgMembership[]; setOrganizations: Dispatch<SetStateAction<OrgMembership[]>>; onOrganizationCreated?: () => void }) {
   const [selectedOrganizationId, setSelectedOrganizationId] = useState(organizations[0]?.id ?? '');
-  const [dashboard, setDashboard] = useState<{ organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; attempted: number; correct: number }>; teamRisk?: { employeeCount: number; assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number } } | null>(null);
+  const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getOrganizationDashboard>> | null>(null);
   const [organizationName, setOrganizationName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [joinToken, setJoinToken] = useState('');
@@ -1291,7 +1292,7 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
     event.preventDefault(); setMessage(null);
     try {
       const organization = await createOrganization(session.access_token, organizationName);
-      const next = [...organizations, { ...organization, isAdmin: true }]; setOrganizations(next); setOrganizationName(''); setSelectedOrganizationId(organization.id); onOrganizationCreated?.();
+      const next = [...organizations, { ...organization, isAdmin: true, defaultEmployeeLanguage: 'en' as const }]; setOrganizations(next); setOrganizationName(''); setSelectedOrganizationId(organization.id); onOrganizationCreated?.();
       setMessageTone('status');
       setMessage(`Created ${organization.name}. Invite your first employee below.`);
     } catch (error) {
@@ -1363,10 +1364,10 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
     }
   };
 
-  return <section className="content"><Header eyebrow="Organizations / human risk" title={dashboard?.organization.name ?? 'Your organization'} detail="Understand team progress through aggregate signals, without exposing unnecessary personal information." />{message && <div className={messageTone === 'error' ? 'page-error' : 'settings-message'} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}{organizations.length === 0 ? <div className="org-entry-grid"><article className="question-card org-create"><p className="question-dimension">Organization setup</p><h2>Create your first organization workspace.</h2><form onSubmit={create}><label className="org-label">Organization name<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required minLength={2} maxLength={180} /></label><button className="primary action-button">Create organization <b>→</b></button></form></article><article className="question-card org-create"><p className="question-dimension">Employee access</p><h2>Join with an invitation.</h2><form onSubmit={accept}><label className="org-label">Invitation link or token<input type="password" autoComplete="off" value={joinToken} onChange={(event) => setJoinToken(event.target.value)} required placeholder="Paste /?invite=... or the token" /></label><button className="primary action-button">Accept invitation <b>→</b></button></form></article></div> : <><div className="org-toolbar"><label>Workspace<select value={selectedOrganizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void report()}>Download report <b>↓</b></button></div>{dashboard && <><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><div className="org-columns"><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE PROGRESS</p><h2>Team activity</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><div className="employee-row-main"><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>{selectedIsAdmin && employee.id !== session.user.id && <button type="button" className="text-button employee-remove" disabled={removingMemberId === employee.id} onClick={() => void removeMember(employee.id, employee.name)}>{removingMemberId === employee.id ? 'Removing...' : 'Remove'}</button>}</div>)}</div> : <div className="empty-state"><span aria-hidden="true">!</span><p>No employees yet.<br /><small>Invite your first team member below.</small></p></div>}</article><article className="invite-panel"><p className="card-kicker">INVITE EMPLOYEE</p><h2>Bring your team in.</h2><p className="lede">Join links are emailed only — they are never shown or copied in this dashboard.</p><form onSubmit={invite}><label className="org-label">Work email<input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} required /></label><button className="primary action-button">Send invitation <b>→</b></button></form></article></div></>}</>}</section>;
+  return <section className="content"><Header eyebrow="Organizations / human risk" title={dashboard?.organization.name ?? 'Your organization'} detail="Understand team progress through aggregate signals, without exposing unnecessary personal information." />{message && <div className={messageTone === 'error' ? 'page-error' : 'settings-message'} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}{organizations.length === 0 ? <div className="org-entry-grid"><article className="question-card org-create"><p className="question-dimension">Organization setup</p><h2>Create your first organization workspace.</h2><form onSubmit={create}><label className="org-label">Organization name<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required minLength={2} maxLength={180} /></label><button className="primary action-button">Create organization <b>→</b></button></form></article><article className="question-card org-create"><p className="question-dimension">Employee access</p><h2>Join with an invitation.</h2><form onSubmit={accept}><label className="org-label">Invitation link or token<input type="password" autoComplete="off" value={joinToken} onChange={(event) => setJoinToken(event.target.value)} required placeholder="Paste /?invite=... or the token" /></label><button className="primary action-button">Accept invitation <b>→</b></button></form></article></div> : <><div className="org-toolbar"><label>Workspace<select value={selectedOrganizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void report()}>Download report <b>↓</b></button></div>{dashboard && <><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><div className="org-columns"><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE PROGRESS</p><h2>Team activity</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><div className="employee-row-main"><strong>{employee.name}</strong><span>{employee.modulesCompleted}/{employee.modulesTotal} modules · {employee.attempted} attempts · {employee.correct} correct</span><small>{employee.riskSummary} · Last active {employee.lastActivityAt ? new Date(employee.lastActivityAt).toLocaleDateString() : '—'}</small></div>{selectedIsAdmin && employee.id !== session.user.id && <button type="button" className="text-button employee-remove" disabled={removingMemberId === employee.id} onClick={() => void removeMember(employee.id, employee.name)}>{removingMemberId === employee.id ? 'Removing...' : 'Remove'}</button>}</div>)}</div> : <div className="empty-state"><span aria-hidden="true">!</span><p>No employees yet.<br /><small>Invite your first team member below.</small></p></div>}</article><article className="invite-panel"><p className="card-kicker">INVITE EMPLOYEE</p><h2>Bring your team in.</h2><p className="lede">Join links are emailed only — they are never shown or copied in this dashboard.</p><form onSubmit={invite}><label className="org-label">Work email<input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} required /></label><button className="primary action-button">Send invitation <b>→</b></button></form></article></div></>}</>}</section>;
 }
 
-function OrganizationDashboard({ session, organizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }> }) {
+function OrganizationDashboard({ session, organizations }: { session: Session; organizations: OrgMembership[] }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getOrganizationDashboard>> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1395,9 +1396,9 @@ function TeamRiskPanel({ teamRisk }: { teamRisk?: { assessedEmployees: number; c
   return <article className="team-risk"><p className="card-kicker">TEAM RISK</p><h2>{notEnoughData ? 'Not enough assessment data yet' : `Highest-risk area: ${teamRisk.highestRiskArea}`}</h2>{notEnoughData ? <p>Aggregate category risk is shown after at least five employees complete the baseline assessment. Individual answers stay private.</p> : <div>{teamRisk.categoryBreakdown.map((item) => <div className="risk-bar" key={item.category}><span>{item.category}</span><span><i style={{ width: `${item.weakPercent}%` }} /></span><span>{item.weakPercent}%</span></div>)}</div>}</article>;
 }
 
-function OrganizationReports({ session, organizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }> }) {
+function OrganizationReports({ session, organizations }: { session: Session; organizations: OrgMembership[] }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
-  const [report, setReport] = useState<unknown>(null);
+  const [report, setReport] = useState<Awaited<ReturnType<typeof createOrganizationReport>> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
@@ -1417,21 +1418,27 @@ function OrganizationReports({ session, organizations }: { session: Session; org
     return () => { active = false; };
   }, [organizationId, reload, session.access_token]);
   const download = async () => { if (!organizationId) return; try { const csv = await createOrganizationCsvReport(session.access_token, organizationId); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'marics-organization-report.csv'; link.click(); URL.revokeObjectURL(url); } catch (error) { setMessage(error instanceof Error ? error.message : 'CSV report could not be generated.'); } };
-  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review aggregate organization reporting and export the current CSV." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void download()}>Download CSV <b>&#8595;</b></button></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{report && <article className="role-empty"><p className="card-kicker">AGGREGATE REPORT</p><h2>Report ready</h2><p>The report is generated from organization-level participation data.</p></article>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
+  const dashboard = report?.dashboard;
+  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review aggregate organization reporting and export the current CSV." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void download()}>Download CSV <b>&#8595;</b></button></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{dashboard && <><p className="lede">Generated {new Date(report.generatedAt).toLocaleString()}</p><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>ASSESSED</span><strong>{dashboard.teamRisk?.assessedEmployees ?? 0}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE SUMMARY</p><h2>Participation snapshot</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><div className="employee-row-main"><strong>{employee.name}</strong><span>{employee.modulesCompleted}/{employee.modulesTotal} modules · {employee.attempted} attempts · {employee.correct} correct</span><small>{employee.riskSummary}</small></div></div>)}</div> : <p className="admin-empty-text">No employees in this workspace yet.</p>}</article></>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
 }
 
-function OrganizationSettingsPanel({ session, organizations, setOrganizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; setOrganizations: Dispatch<SetStateAction<Array<{ id: string; name: string; isAdmin: boolean }>>> }) {
+function OrganizationSettingsPanel({ session, organizations, setOrganizations }: { session: Session; organizations: OrgMembership[]; setOrganizations: Dispatch<SetStateAction<OrgMembership[]>> }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [name, setName] = useState(organizations[0]?.name ?? '');
-  const [defaultEmployeeLanguage, setDefaultEmployeeLanguage] = useState<'en' | 'af' | 'pt'>('en');
+  const [defaultEmployeeLanguage, setDefaultEmployeeLanguage] = useState<'en' | 'af' | 'pt'>(organizations[0]?.defaultEmployeeLanguage ?? 'en');
   const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => { const organization = organizations.find((entry) => entry.id === organizationId); if (organization) setName(organization.name); }, [organizationId, organizations]);
+  useEffect(() => {
+    const organization = organizations.find((entry) => entry.id === organizationId);
+    if (!organization) return;
+    setName(organization.name);
+    setDefaultEmployeeLanguage(organization.defaultEmployeeLanguage ?? 'en');
+  }, [organizationId, organizations]);
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!organizationId) return;
     try {
       const updated = await updateOrganization(session.access_token, organizationId, { name, defaultEmployeeLanguage });
-      setOrganizations((current) => current.map((entry) => entry.id === updated.id ? { ...entry, name: updated.name } : entry));
+      setOrganizations((current) => current.map((entry) => entry.id === updated.id ? { ...entry, name: updated.name, defaultEmployeeLanguage: updated.defaultEmployeeLanguage } : entry));
       setDefaultEmployeeLanguage(updated.defaultEmployeeLanguage);
       setMessage('Organization settings saved.');
     } catch (error) {
@@ -1661,7 +1668,7 @@ function HelpCentre({ language }: { language: Language }) {
   </article></section>;
 }
 
-function EmployeeOrganizationView({ organizations }: { organizations: Array<{ id: string; name: string; isAdmin: boolean }> }) {
+function EmployeeOrganizationView({ organizations }: { organizations: OrgMembership[] }) {
   const membershipLabel = organizations.map((organization) => organization.name).filter(Boolean).join(' · ');
   return <section className="content"><Header eyebrow="Organization / membership" title="Your organization" detail="You can see membership context. Your individual answers are not shared with administrators." /><article className="help-article"><h2>{membershipLabel || 'No organization linked yet'}</h2><p>{membershipLabel ? 'Your employer can view aggregate completion and team-risk signals. They cannot open your assessment answers. If you were invited to the wrong organization, contact your administrator rather than forwarding the invitation.' : 'Open your invitation link while signed in with the invited email, or ask your administrator to resend it.'}</p></article></section>;
 }

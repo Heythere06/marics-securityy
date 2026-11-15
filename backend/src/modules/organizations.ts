@@ -293,10 +293,16 @@ export async function getOrganizationReportCsv(client: SupabaseClient, organizat
 }
 
 export async function listOrganizations(client: SupabaseClient) {
-  const { data, error } = await client.from('organization_memberships').select('organization_id, is_admin, organizations(id, name)').order('created_at', { ascending: true });
+  const { data, error } = await client.from('organization_memberships').select('organization_id, is_admin, organizations(id, name, default_employee_language)').order('created_at', { ascending: true });
   if (error) throw error;
   return data.map((membership) => {
     const organization = Array.isArray(membership.organizations) ? membership.organizations[0] : membership.organizations;
-    return { id: membership.organization_id, isAdmin: membership.is_admin, name: organization?.name ?? 'Organization' };
+    const language = organization?.default_employee_language;
+    return {
+      id: membership.organization_id,
+      isAdmin: membership.is_admin,
+      name: organization?.name ?? 'Organization',
+      defaultEmployeeLanguage: language === 'af' || language === 'pt' ? language : 'en' as const,
+    };
   });
 }

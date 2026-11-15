@@ -123,6 +123,16 @@
 | FE-018 assessment save toast-only | **Fixed** — inline `.assessment-submit-error` |
 | FE-020 retake contaminated storage | **Fixed** — clear onboarding key on retake |
 
+### Batch 12 status (Org admin UX + cert/scenario integrity) — landed in repo
+
+| ID | Status |
+|----|--------|
+| FE-037 org default language | **Fixed** — list returns language; settings hydrate |
+| FE-038 OrganizationReports stub | **Fixed** — render dashboard metrics + team risk |
+| FE-039 sparse employee list | **Fixed** — modules, risk, last activity |
+| BE-029 cert award silent no-op | **Fixed** — prod fails without service role |
+| BE-030 admin scenario ownership | **Fixed** — update requires matching moduleId |
+
 ### Severity key
 
 | Level | Meaning |

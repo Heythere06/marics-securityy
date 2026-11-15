@@ -118,13 +118,19 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
   const completedAt = moduleCompleted ? currentProgress?.completed_at ?? new Date().toISOString() : null;
   const { data: progress, error: progressError } = await scoring.from('training_progress').upsert({ user_id: user.id, module_id: scenario.module_id, scenarios_attempted: (currentProgress?.scenarios_attempted ?? 0) + (wasAttempted ? 0 : 1), scenarios_correct: (currentProgress?.scenarios_correct ?? 0) + (!wasCorrect && selected.is_correct ? 1 : 0), completed_at: completedAt, updated_at: new Date().toISOString() }, { onConflict: 'user_id,module_id' }).select('scenarios_attempted, scenarios_correct, completed_at, updated_at').single();
   if (progressError) throw progressError;
-  if (moduleCompleted) await awardModuleCertificate(client, user.id, scenario.module_id);
+  let certificateAwarded = false;
+  if (moduleCompleted) {
+    const certificate = await awardModuleCertificate(client, user.id, scenario.module_id);
+    certificateAwarded = Boolean(certificate);
+  }
   return {
     isCorrect: selected.is_correct,
     feedback: selectedFeedback.choice,
     explanation: correctFeedback.explanation,
     correctOptionKey: correct.option_key as 'A' | 'B' | 'C' | 'D',
     progress,
+    moduleCompleted,
+    certificateAwarded,
   };
 }
 

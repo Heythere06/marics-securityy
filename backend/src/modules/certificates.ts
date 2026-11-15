@@ -17,7 +17,10 @@ export function hasCorrectlyAnsweredEveryScenario(
 }
 
 export async function awardModuleCertificate(userClient: SupabaseClient, userId: string, moduleId: string) {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (process.env.NODE_ENV === 'production') throw new Error('CERTIFICATE_AWARD_UNAVAILABLE');
+    return null;
+  }
   const service = createServiceClient();
   const { data: module, error: moduleError } = await service.from('training_modules').select('id, scenarios(id)').eq('id', moduleId).eq('is_published', true).eq('is_assessment', false).maybeSingle();
   if (moduleError) throw moduleError;
@@ -43,7 +46,10 @@ export async function awardModuleCertificate(userClient: SupabaseClient, userId:
 }
 
 export async function ensureUserCertificates(client: SupabaseClient, userId: string) {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (process.env.NODE_ENV === 'production') throw new Error('CERTIFICATE_AWARD_UNAVAILABLE');
+    return;
+  }
   const service = createServiceClient();
   const { data: modules, error } = await service.from('training_modules').select('id').eq('is_published', true).eq('is_assessment', false);
   if (error) throw error;

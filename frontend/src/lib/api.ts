@@ -104,10 +104,12 @@ export async function getTrainingSummary(accessToken: string) {
   return (await response.json()) as { attempted: number; correct: number; lastAttemptAt: string | null; modules: Array<{ id: string; slug: string; title: Record<string, string>; scenarioCount: number; scenariosAttempted: number; scenariosCorrect: number; completed: boolean }>; recommendation: { slug: string; title: Record<string, string>; reason: 'focus-area' | 'next-unfinished' } | null };
 }
 
+export type OrganizationMembership = { id: string; name: string; isAdmin: boolean; defaultEmployeeLanguage?: 'en' | 'af' | 'pt' };
+
 export async function getOrganizations(accessToken: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Organizations could not be loaded');
-  return (await response.json()).organizations as Array<{ id: string; name: string; isAdmin: boolean }>;
+  return (await response.json()).organizations as OrganizationMembership[];
 }
 
 export async function createOrganization(accessToken: string, name: string) {
@@ -167,7 +169,10 @@ export async function removeOrganizationMember(accessToken: string, organization
 export async function createOrganizationReport(accessToken: string, organizationId: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/reports`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Report could not be generated');
-  return (await response.json()).report;
+  return (await response.json()).report as {
+    generatedAt: string;
+    dashboard: Awaited<ReturnType<typeof getOrganizationDashboard>>;
+  };
 }
 
 export async function createOrganizationCsvReport(accessToken: string, organizationId: string) {

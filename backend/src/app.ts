@@ -204,6 +204,7 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
+      if (error instanceof Error && error.message === 'SCENARIO_MODULE_MISMATCH') return reply.code(404).send({ error: 'SCENARIO_MODULE_MISMATCH', message: 'That scenario does not belong to the selected module.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Enter a scenario, exactly four options, and one correct answer.' });
       request.log.error(error, 'Admin scenario creation failed');
       return reply.code(500).send({ error: 'ADMIN_UNAVAILABLE', message: 'We could not create the scenario.' });
@@ -836,6 +837,7 @@ export function buildApp() {
       if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to save training progress.' });
       if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
+      if (error instanceof Error && error.message === 'CERTIFICATE_AWARD_UNAVAILABLE') return reply.code(503).send({ error: 'CERTIFICATE_AWARD_UNAVAILABLE', message: 'Training progress was blocked because certificate awarding is not configured. Set SUPABASE_SERVICE_ROLE_KEY.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ANSWER', message: 'Choose one of the available responses.' });
       request.log.error(error, 'Training answer failed');
       return reply.code(500).send({ error: 'TRAINING_UNAVAILABLE', message: 'We could not save this training attempt.' });
@@ -872,6 +874,7 @@ export function buildApp() {
     } catch (error) {
       if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your certificates.' });
+      if (error instanceof Error && error.message === 'CERTIFICATE_AWARD_UNAVAILABLE') return reply.code(503).send({ error: 'CERTIFICATE_AWARD_UNAVAILABLE', message: 'Certificates are unavailable because award configuration is missing. Set SUPABASE_SERVICE_ROLE_KEY.' });
       request.log.error(error, 'Certificate listing failed');
       return reply.code(500).send({ error: 'CERTIFICATES_UNAVAILABLE', message: 'We could not load your certificates.' });
     }
