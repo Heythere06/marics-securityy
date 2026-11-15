@@ -26,3 +26,15 @@ export function createServiceClient(): SupabaseClient {
   serviceClientCache = { url, key, client };
   return client;
 }
+
+/** Trusted client for scoring, answer keys, and integrity-sensitive writes (CIA). */
+export function requireScoringClient(fallback?: SupabaseClient): SupabaseClient {
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) return createServiceClient();
+  if (process.env.NODE_ENV === 'production') throw new Error('SERVICE_ROLE_REQUIRED');
+  if (fallback) return fallback;
+  throw new Error('SERVICE_ROLE_REQUIRED');
+}
+
+export function toPublicInvitation(invitation: { id: string; email: string; expiresAt: string; token?: string }) {
+  return { id: invitation.id, email: invitation.email, expiresAt: invitation.expiresAt };
+}

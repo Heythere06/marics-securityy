@@ -533,3 +533,5 @@ html { scroll-behavior: smooth; }
   .scenario-grid { grid-template-columns: 1fr; }
   .scenario-choice { min-height: 96px; }
 }
+
+.employee-row { align-items: center; }.employee-row-main { display: grid; gap: 4px; min-width: 0; }.employee-remove { flex-shrink: 0; color: #8a3a32; }

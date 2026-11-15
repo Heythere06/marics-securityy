@@ -21,6 +21,7 @@ function App() {
   const [role, setRole] = useState<AppRole>('individual');
   const [authReady, setAuthReady] = useState(supabase === null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   const [authRetry, setAuthRetry] = useState(0);
   const [view, setView] = useState<View>('overview');
   const [assessmentIndex, setAssessmentIndex] = useState(0);
@@ -103,7 +104,9 @@ function App() {
     });
     const onUnauthorized = () => {
       setSession(null);
-      setAuthError('Your session expired. Please sign in again.');
+      // Do not block on the Retry-only error screen — send learners to sign-in.
+      setAuthError(null);
+      setSessionExpiredNotice('Your session expired. Please sign in again.');
       void supabase?.auth.signOut();
     };
     window.addEventListener('marics:unauthorized', onUnauthorized);
@@ -136,7 +139,11 @@ function App() {
             window.localStorage.removeItem('marics_invitation_token');
             setInviteNotice('You joined your organization. Your employee workspace is ready.');
           } catch (error) {
-            setInviteNotice(error instanceof Error ? error.message : 'We could not accept your organization invitation.');
+            const detail = error instanceof Error ? error.message : 'We could not accept your organization invitation.';
+            setInviteNotice(detail);
+            if (/invalid|expired|mismatch|already|used/i.test(detail)) {
+              window.localStorage.removeItem('marics_invitation_token');
+            }
           }
         }
         const [profile, memberships, savedRiskProfile, summary] = await Promise.all([
@@ -166,12 +173,17 @@ function App() {
           const scenarios = await getOnboardingAssessment(session.access_token);
           if (scenarios.length !== 10) throw new Error(`The onboarding assessment returned ${scenarios.length} scenarios; 10 are required. Apply migration 202609190011_onboarding_assessment.sql.`);
           setOnboardingScenarios(scenarios);
-          const saved = window.sessionStorage.getItem(`marics_onboarding_${session.user.id}`);
+          const onboardingKey = `marics_onboarding_${session.user.id}`;
+          const saved = window.sessionStorage.getItem(onboardingKey);
           if (saved) {
-            const parsed = JSON.parse(saved) as { answers: Array<{ scenarioSlug: string; optionKey: 'A' | 'B' | 'C' }>; index: number };
-            if (Array.isArray(parsed.answers)) {
-              setAssessmentAnswers(parsed.answers);
-              setAssessmentIndex(Math.min(parsed.index ?? parsed.answers.length, Math.max(scenarios.length - 1, 0)));
+            try {
+              const parsed = JSON.parse(saved) as { answers: Array<{ scenarioSlug: string; optionKey: 'A' | 'B' | 'C' }>; index: number };
+              if (Array.isArray(parsed.answers)) {
+                setAssessmentAnswers(parsed.answers);
+                setAssessmentIndex(Math.min(parsed.index ?? parsed.answers.length, Math.max(scenarios.length - 1, 0)));
+              }
+            } catch {
+              window.sessionStorage.removeItem(onboardingKey);
             }
           }
         }
@@ -291,10 +303,10 @@ function App() {
   const submitAssessment = async () => {
     if (!selectedOptionKey || !currentAssessmentScenario) return;
     const nextAnswers = [...assessmentAnswers, { scenarioSlug: currentAssessmentScenario.slug, optionKey: selectedOptionKey }];
-    setAssessmentAnswers(nextAnswers);
-    setSelectedOptionKey(null);
-    if (session) window.sessionStorage.setItem(`marics_onboarding_${session.user.id}`, JSON.stringify({ answers: nextAnswers, index: assessmentIndex + 1 }));
     if (assessmentIndex < onboardingScenarios.length - 1) {
+      setAssessmentAnswers(nextAnswers);
+      setSelectedOptionKey(null);
+      if (session) window.sessionStorage.setItem(`marics_onboarding_${session.user.id}`, JSON.stringify({ answers: nextAnswers, index: assessmentIndex + 1 }));
       setAssessmentIndex(assessmentIndex + 1);
       return;
     }
@@ -303,6 +315,8 @@ function App() {
     setSaveError(null);
     try {
       const profile = await saveAssessment(session.access_token, nextAnswers);
+      setAssessmentAnswers(nextAnswers);
+      setSelectedOptionKey(null);
       setRiskProfile(profile);
       setRetakingAssessment(false);
       setView('assessment');
@@ -405,10 +419,10 @@ function App() {
   };
 
   if (!authReady) return <div className="loading-screen">Loading your secure workspace...</div>;
-  if (authError && !session) return <main className="error-screen"><section className="auth-panel"><p className="eyebrow">MARICS Security</p><h1>Your secure workspace could not load.</h1><p className="lede" role="alert">{authError}</p><button className="primary" onClick={() => { setAuthError(null); setAuthReady(false); setAuthRetry((attempt) => attempt + 1); }}>Retry workspace <b>&#8594;</b></button></section></main>;
+  if (authError && !session) return <main className="error-screen"><section className="auth-panel"><p className="eyebrow">MARICS Security</p><h1>Your secure workspace could not load.</h1><p className="lede" role="alert">{authError}</p><button className="primary" onClick={() => { setAuthError(null); setAuthReady(false); setAuthRetry((attempt) => attempt + 1); }}>Retry workspace <b>&#8594;</b></button><button className="auth-switch" type="button" onClick={() => { setAuthError(null); setSessionExpiredNotice(null); }}>Sign in instead</button></section></main>;
   if (verificationId) return <CertificateVerificationPage verificationId={verificationId} />;
   if (recoveryMode && session) return <PasswordRecoveryScreen onDone={() => setRecoveryMode(false)} />;
-  if (!session) return <PublicSite language={language} setLanguage={setLanguage} />;
+  if (!session) return <PublicSite language={language} setLanguage={setLanguage} sessionNotice={sessionExpiredNotice} onClearSessionNotice={() => setSessionExpiredNotice(null)} />;
   if (!profileReady) return <div className="loading-screen">Preparing your workspace...</div>;
 
   return <main className="workspace">
@@ -482,8 +496,8 @@ function App() {
   </main>;
 }
 
-function PublicSite({ language, setLanguage }: { language: Language; setLanguage: (language: Language) => void }) {
-  const [showAuth, setShowAuth] = useState(() => Boolean(new URLSearchParams(window.location.search).get('invite')) || window.location.hash === '#login');
+function PublicSite({ language, setLanguage, sessionNotice = null, onClearSessionNotice }: { language: Language; setLanguage: (language: Language) => void; sessionNotice?: string | null; onClearSessionNotice?: () => void }) {
+  const [showAuth, setShowAuth] = useState(() => Boolean(sessionNotice) || Boolean(new URLSearchParams(window.location.search).get('invite')) || window.location.hash === '#login');
   const [logoState, setLogoState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const t = getTranslations(language);
 
@@ -491,7 +505,11 @@ function PublicSite({ language, setLanguage }: { language: Language; setLanguage
     document.documentElement.lang = language;
   }, [language]);
 
-  if (showAuth) return <AuthScreen configured={supabase !== null} language={language} setLanguage={(value) => setLanguage(value as Language)} onBack={() => setShowAuth(false)} />;
+  useEffect(() => {
+    if (sessionNotice) setShowAuth(true);
+  }, [sessionNotice]);
+
+  if (showAuth) return <AuthScreen configured={supabase !== null} language={language} setLanguage={(value) => setLanguage(value as Language)} onBack={() => { onClearSessionNotice?.(); setShowAuth(false); }} initialMessage={sessionNotice} />;
 
   return <main className="public-site">
     <nav className="public-nav" aria-label="Primary">
@@ -593,7 +611,7 @@ function PublicSite({ language, setLanguage }: { language: Language; setLanguage
   </main>;
 }
 
-function AuthScreen({ configured, language, setLanguage, onBack }: { configured: boolean; language: Language; setLanguage: (language: string) => void; onBack?: () => void }) {
+function AuthScreen({ configured, language, setLanguage, onBack, initialMessage = null }: { configured: boolean; language: Language; setLanguage: (language: string) => void; onBack?: () => void; initialMessage?: string | null }) {
   const t = getTranslations(language);
   const [mode, setMode] = useState<'sign-in' | 'sign-up' | 'reset'>('sign-in');
   const [email, setEmail] = useState('');
@@ -601,11 +619,18 @@ function AuthScreen({ configured, language, setLanguage, onBack }: { configured:
   const [fullName, setFullName] = useState('');
   const [countryCode, setCountryCode] = useState('');
   const [accountType, setAccountType] = useState('individual');
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(initialMessage);
   const [busy, setBusy] = useState(false);
   const [pendingVerification, setPendingVerification] = useState(false);
   const [invitePreview, setInvitePreview] = useState<{ organizationName: string; email: string; isExpired: boolean; isUsed: boolean } | null>(null);
   const [invitePreviewError, setInvitePreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialMessage) {
+      setMessage(initialMessage);
+      setMode('sign-in');
+    }
+  }, [initialMessage]);
 
   useEffect(() => {
     const invitationToken = new URLSearchParams(window.location.search).get('invite')
@@ -618,11 +643,22 @@ function AuthScreen({ configured, language, setLanguage, onBack }: { configured:
       .then((invitation) => {
         setInvitePreview(invitation);
         setEmail(invitation.email);
-        if (invitation.isExpired) setInvitePreviewError('This invitation has expired. Ask your administrator for a new link.');
-        else if (invitation.isUsed) setInvitePreviewError('This invitation was already accepted. Sign in with the invited email instead.');
-        else setInvitePreviewError(null);
+        if (invitation.isExpired) {
+          setInvitePreviewError('This invitation has expired. Ask your administrator for a new link.');
+          window.localStorage.removeItem('marics_invitation_token');
+          setMode('sign-in');
+        } else if (invitation.isUsed) {
+          setInvitePreviewError('This invitation was already accepted. Sign in with the invited email instead.');
+          window.localStorage.removeItem('marics_invitation_token');
+          setMode('sign-in');
+        } else {
+          setInvitePreviewError(null);
+        }
       })
-      .catch((error) => setInvitePreviewError(error instanceof Error ? error.message : 'This invitation link could not be verified.'));
+      .catch((error) => {
+        setInvitePreviewError(error instanceof Error ? error.message : 'This invitation link could not be verified.');
+        window.localStorage.removeItem('marics_invitation_token');
+      });
   }, []);
 
   const submit = async (event: FormEvent) => {
@@ -681,7 +717,7 @@ function AuthScreen({ configured, language, setLanguage, onBack }: { configured:
   };
 
   const joiningOrg = Boolean(invitePreview && !invitePreview.isExpired && !invitePreview.isUsed);
-  return <main className="auth-shell"><section className="auth-panel"><div className="brand auth-brand">MARICS<span>/ SECURITY</span></div><p className="eyebrow">Human risk intelligence platform</p><h1>{pendingVerification ? 'Verify your email.' : mode === 'sign-in' ? 'Welcome back.' : mode === 'reset' ? 'Reset your password.' : joiningOrg ? `Join ${invitePreview!.organizationName}.` : 'Build safer habits.'}</h1><p className="lede">{pendingVerification ? (joiningOrg ? `Confirm ${invitePreview!.email} to unlock your ${invitePreview!.organizationName} employee workspace.` : 'MARICS keeps accounts closed until the email address is confirmed. That protects learner progress and organization invitations.') : joiningOrg ? 'Create or sign in with the invited work email. Your individual answers stay private from administrators.' : 'Your private workspace for practicing the decisions attackers try to rush.'}</p>{(invitePreview || invitePreviewError) && <div className={`invite-banner ${invitePreviewError ? 'error' : ''}`} role="status"><p className="card-kicker">ORGANIZATION INVITATION</p>{invitePreview && <h2>{invitePreview.organizationName}</h2>}{invitePreview && <p>Invited email: <strong>{invitePreview.email}</strong></p>}{invitePreviewError ? <p>{invitePreviewError}</p> : <p>By continuing you confirm this is your work email and you accept that your employer can see aggregate progress only.</p>}</div>}{!configured ? <div className="auth-message">Supabase is not configured for the frontend yet. Add the Vite Supabase variables to your local environment and restart the dev server.</div> : <form onSubmit={submit}>{mode === 'sign-up' && !pendingVerification && <><label>Name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label><label>Country or region<input value={countryCode} onChange={event => setCountryCode(event.target.value.toUpperCase())} maxLength={2} placeholder="NA" required /></label><label>Preferred language<select value={language} onChange={event => setLanguage(event.target.value)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label>{!joiningOrg && <><label>Account type<select value={accountType} onChange={event => setAccountType(event.target.value)}><option value="individual">Individual learner</option><option value="organization">Organization (verify email, complete assessment, then create a workspace)</option></select></label><p className="lede">Organization signup stays a learner account until you create the workspace. The signup dropdown never grants administrator access.</p></>}</>}<label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} required readOnly={joiningOrg} /></label>{mode !== 'reset' && <label>Password<input type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} required /></label>}<button className="primary auth-submit" disabled={busy || Boolean(invitePreviewError)}>{busy ? 'Working...' : mode === 'sign-in' ? 'Sign in' : mode === 'reset' ? 'Send reset link' : joiningOrg ? 'Create employee account' : 'Create account'} <b>&#8594;</b></button>{message && <p className="auth-message" role="status">{message}</p>}{(pendingVerification || /verify|verification/i.test(message ?? '')) && <button type="button" className="auth-switch" onClick={() => void resendVerification()} disabled={busy || !email}>Resend verification email</button>}</form>}<div className="auth-links"><button className="auth-switch" onClick={() => { setPendingVerification(false); setMessage(null); setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); }}>{mode === 'sign-in' ? 'Need an account? Sign up' : 'Back to sign in'}</button>{mode === 'sign-in' && <button className="auth-switch" onClick={() => { setPendingVerification(false); setMode('reset'); }}>Forgot password?</button>}{onBack && <button className="auth-switch" onClick={onBack}>Back to site</button>}</div></section></main>;
+  return <main className="auth-shell"><section className="auth-panel"><div className="brand auth-brand">MARICS<span>/ SECURITY</span></div><p className="eyebrow">Human risk intelligence platform</p><h1>{pendingVerification ? 'Verify your email.' : mode === 'sign-in' ? 'Welcome back.' : mode === 'reset' ? 'Reset your password.' : joiningOrg ? `Join ${invitePreview!.organizationName}.` : 'Build safer habits.'}</h1><p className="lede">{pendingVerification ? (joiningOrg ? `Confirm ${invitePreview!.email} to unlock your ${invitePreview!.organizationName} employee workspace.` : 'MARICS keeps accounts closed until the email address is confirmed. That protects learner progress and organization invitations.') : joiningOrg ? 'Create or sign in with the invited work email. Your individual answers stay private from administrators.' : 'Your private workspace for practicing the decisions attackers try to rush.'}</p>{(invitePreview || invitePreviewError) && <div className={`invite-banner ${invitePreviewError ? 'error' : ''}`} role="status"><p className="card-kicker">ORGANIZATION INVITATION</p>{invitePreview && <h2>{invitePreview.organizationName}</h2>}{invitePreview && <p>Invited email: <strong>{invitePreview.email}</strong></p>}{invitePreviewError ? <p>{invitePreviewError}</p> : <p>By continuing you confirm this is your work email and you accept that your employer can see aggregate progress only.</p>}</div>}{!configured ? <div className="auth-message">Supabase is not configured for the frontend yet. Add the Vite Supabase variables to your local environment and restart the dev server.</div> : <form onSubmit={submit}>{mode === 'sign-up' && !pendingVerification && <><label>Name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label><label>Country or region<input value={countryCode} onChange={event => setCountryCode(event.target.value.toUpperCase())} maxLength={2} placeholder="NA" required /></label><label>Preferred language<select value={language} onChange={event => setLanguage(event.target.value)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label>{!joiningOrg && <><label>Account type<select value={accountType} onChange={event => setAccountType(event.target.value)}><option value="individual">Individual learner</option><option value="organization">Organization (verify email, complete assessment, then create a workspace)</option></select></label><p className="lede">Organization signup stays a learner account until you create the workspace. The signup dropdown never grants administrator access.</p></>}</>}<label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} required readOnly={joiningOrg} /></label>{mode !== 'reset' && <label>Password<input type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} required /></label>}<button className="primary auth-submit" disabled={busy || (mode === 'sign-up' && Boolean(invitePreviewError))}>{busy ? 'Working...' : mode === 'sign-in' ? 'Sign in' : mode === 'reset' ? 'Send reset link' : joiningOrg ? 'Create employee account' : 'Create account'} <b>&#8594;</b></button>{message && <p className="auth-message" role="status">{message}</p>}{(pendingVerification || /verify|verification/i.test(message ?? '')) && <button type="button" className="auth-switch" onClick={() => void resendVerification()} disabled={busy || !email}>Resend verification email</button>}</form>}<div className="auth-links"><button className="auth-switch" onClick={() => { setPendingVerification(false); setMessage(null); setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); }}>{mode === 'sign-in' ? 'Need an account? Sign up' : 'Back to sign in'}</button>{mode === 'sign-in' && <button className="auth-switch" onClick={() => { setPendingVerification(false); setMode('reset'); }}>Forgot password?</button>}{onBack && <button className="auth-switch" onClick={onBack}>Back to site</button>}</div></section></main>;
 }
 
 function formatAuthError(error: { message: string; code?: string; status?: number }) {
@@ -1087,11 +1123,12 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
   const [dashboard, setDashboard] = useState<{ organization: { id: string; name: string }; employeeCount: number; trainedEmployees: number; attempted: number; correct: number; employees: Array<{ id: string; name: string; attempted: number; correct: number }>; teamRisk?: { employeeCount: number; assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number } } | null>(null);
   const [organizationName, setOrganizationName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [inviteEmailDelivered, setInviteEmailDelivered] = useState<boolean | null>(null);
   const [joinToken, setJoinToken] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<'status' | 'error'>('status');
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [dashboardReload, setDashboardReload] = useState(0);
+  const selectedIsAdmin = organizations.find((organization) => organization.id === selectedOrganizationId)?.isAdmin === true;
 
   useEffect(() => {
     if (!selectedOrganizationId) return;
@@ -1099,7 +1136,7 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
       setMessageTone('error');
       setMessage(error instanceof Error ? error.message : 'Organization dashboard could not be loaded.');
     });
-  }, [selectedOrganizationId, session.access_token]);
+  }, [selectedOrganizationId, session.access_token, dashboardReload]);
 
   const create = async (event: FormEvent) => {
     event.preventDefault(); setMessage(null);
@@ -1114,17 +1151,14 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
     }
   };
   const invite = async (event: FormEvent) => {
-    event.preventDefault(); if (!selectedOrganizationId) return; setMessage(null); setInviteLink(null);
+    event.preventDefault(); if (!selectedOrganizationId) return; setMessage(null);
     try {
       const result = await createInvitation(session.access_token, selectedOrganizationId, inviteEmail);
-      const link = `${window.location.origin}/?invite=${result.token}`;
-      setInviteLink(link);
-      setInviteEmailDelivered(result.emailDelivered);
       setInviteEmail('');
       setMessageTone(result.emailDelivered ? 'status' : 'error');
       setMessage(result.emailDelivered
-        ? `Invitation email sent to ${result.email}. A shareable link is also ready below.`
-        : (result.deliveryMessage ?? `Invitation created for ${result.email}, but email delivery failed. Share the link below.`));
+        ? `Invitation email sent to ${result.email}. For security, the join link is only in that email — it is never shown in the dashboard.`
+        : (result.deliveryMessage ?? `Invitation for ${result.email} could not be emailed. Configure SMTP/Resend and invite again.`));
     } catch (error) {
       setMessageTone('error');
       setMessage(error instanceof Error ? error.message : 'Invitation could not be created.');
@@ -1162,7 +1196,25 @@ function OrganizationWorkspace({ session, organizations, setOrganizations, onOrg
     }
   };
 
-  return <section className="content"><Header eyebrow="Organizations / human risk" title={dashboard?.organization.name ?? 'Your organization'} detail="Understand team progress through aggregate signals, without exposing unnecessary personal information." />{message && <div className={messageTone === 'error' ? 'page-error' : 'settings-message'} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}{organizations.length === 0 ? <div className="org-entry-grid"><article className="question-card org-create"><p className="question-dimension">Organization setup</p><h2>Create your first organization workspace.</h2><form onSubmit={create}><label className="org-label">Organization name<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required minLength={2} maxLength={180} /></label><button className="primary action-button">Create organization <b>→</b></button></form></article><article className="question-card org-create"><p className="question-dimension">Employee access</p><h2>Join with an invitation.</h2><form onSubmit={accept}><label className="org-label">Invitation link or token<input value={joinToken} onChange={(event) => setJoinToken(event.target.value)} required placeholder="Paste /?invite=... or the token" /></label><button className="primary action-button">Accept invitation <b>→</b></button></form></article></div> : <><div className="org-toolbar"><label>Workspace<select value={selectedOrganizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void report()}>Download report <b>↓</b></button></div>{dashboard && <><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><div className="org-columns"><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE PROGRESS</p><h2>Team activity</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>)}</div> : <div className="empty-state"><span aria-hidden="true">!</span><p>No employees yet.<br /><small>Invite your first team member below.</small></p></div>}</article><article className="invite-panel"><p className="card-kicker">INVITE EMPLOYEE</p><h2>Bring your team in.</h2><form onSubmit={invite}><label className="org-label">Work email<input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} required /></label><button className="primary action-button">Send invitation <b>→</b></button></form>{inviteLink && <div className={`invite-result ${inviteEmailDelivered === false ? 'warn' : ''}`}><p>{inviteEmailDelivered === false ? 'Email was not delivered. Share this link directly:' : 'Invitation link (also emailed):'}</p><code>{inviteLink}</code><button type="button" className="text-button" onClick={() => void navigator.clipboard.writeText(inviteLink).then(() => { setMessageTone('status'); setMessage('Invitation link copied.'); })}>Copy link</button></div>}</article></div></>}</>}</section>;
+  const removeMember = async (employeeId: string, employeeName: string) => {
+    if (!selectedOrganizationId || !selectedIsAdmin) return;
+    if (!window.confirm(`Remove ${employeeName} from this organization? They will lose workspace access.`)) return;
+    setRemovingMemberId(employeeId);
+    setMessage(null);
+    try {
+      await removeOrganizationMember(session.access_token, selectedOrganizationId, employeeId);
+      setMessageTone('status');
+      setMessage(`${employeeName} was removed from the organization.`);
+      setDashboardReload((attempt) => attempt + 1);
+    } catch (error) {
+      setMessageTone('error');
+      setMessage(error instanceof Error ? error.message : 'Employee could not be removed.');
+    } finally {
+      setRemovingMemberId(null);
+    }
+  };
+
+  return <section className="content"><Header eyebrow="Organizations / human risk" title={dashboard?.organization.name ?? 'Your organization'} detail="Understand team progress through aggregate signals, without exposing unnecessary personal information." />{message && <div className={messageTone === 'error' ? 'page-error' : 'settings-message'} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}{organizations.length === 0 ? <div className="org-entry-grid"><article className="question-card org-create"><p className="question-dimension">Organization setup</p><h2>Create your first organization workspace.</h2><form onSubmit={create}><label className="org-label">Organization name<input value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} required minLength={2} maxLength={180} /></label><button className="primary action-button">Create organization <b>→</b></button></form></article><article className="question-card org-create"><p className="question-dimension">Employee access</p><h2>Join with an invitation.</h2><form onSubmit={accept}><label className="org-label">Invitation link or token<input type="password" autoComplete="off" value={joinToken} onChange={(event) => setJoinToken(event.target.value)} required placeholder="Paste /?invite=... or the token" /></label><button className="primary action-button">Accept invitation <b>→</b></button></form></article></div> : <><div className="org-toolbar"><label>Workspace<select value={selectedOrganizationId} onChange={(event) => setSelectedOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void report()}>Download report <b>↓</b></button></div>{dashboard && <><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>SCENARIOS ATTEMPTED</span><strong>{dashboard.attempted}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><div className="org-columns"><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE PROGRESS</p><h2>Team activity</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><div className="employee-row-main"><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>{selectedIsAdmin && employee.id !== session.user.id && <button type="button" className="text-button employee-remove" disabled={removingMemberId === employee.id} onClick={() => void removeMember(employee.id, employee.name)}>{removingMemberId === employee.id ? 'Removing...' : 'Remove'}</button>}</div>)}</div> : <div className="empty-state"><span aria-hidden="true">!</span><p>No employees yet.<br /><small>Invite your first team member below.</small></p></div>}</article><article className="invite-panel"><p className="card-kicker">INVITE EMPLOYEE</p><h2>Bring your team in.</h2><p className="lede">Join links are emailed only — they are never shown or copied in this dashboard.</p><form onSubmit={invite}><label className="org-label">Work email<input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} required /></label><button className="primary action-button">Send invitation <b>→</b></button></form></article></div></>}</>}</section>;
 }
 
 function OrganizationDashboard({ session, organizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }> }) {
@@ -1222,15 +1274,28 @@ function OrganizationReports({ session, organizations }: { session: Session; org
 function OrganizationSettingsPanel({ session, organizations, setOrganizations }: { session: Session; organizations: Array<{ id: string; name: string; isAdmin: boolean }>; setOrganizations: Dispatch<SetStateAction<Array<{ id: string; name: string; isAdmin: boolean }>>> }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [name, setName] = useState(organizations[0]?.name ?? '');
+  const [defaultEmployeeLanguage, setDefaultEmployeeLanguage] = useState<'en' | 'af' | 'pt'>('en');
   const [message, setMessage] = useState<string | null>(null);
   useEffect(() => { const organization = organizations.find((entry) => entry.id === organizationId); if (organization) setName(organization.name); }, [organizationId, organizations]);
-  const save = async (event: FormEvent) => { event.preventDefault(); if (!organizationId) return; try { const updated = await updateOrganization(session.access_token, organizationId, { name }); setOrganizations((current) => current.map((entry) => entry.id === updated.id ? { ...entry, name: updated.name } : entry)); setMessage('Organization settings saved.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Organization settings could not be saved.'); } };
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!organizationId) return;
+    try {
+      const updated = await updateOrganization(session.access_token, organizationId, { name, defaultEmployeeLanguage });
+      setOrganizations((current) => current.map((entry) => entry.id === updated.id ? { ...entry, name: updated.name } : entry));
+      setDefaultEmployeeLanguage(updated.defaultEmployeeLanguage);
+      setMessage('Organization settings saved.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Organization settings could not be saved.');
+    }
+  };
   return <article className="settings-panel organization-settings-panel">
     <p className="card-kicker">ORGANIZATION WORKSPACE</p>
     {message && <p className="settings-message" role="status">{message}</p>}
     {organizations.length ? <form className="settings-form" onSubmit={save}>
       <label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>
       <label>Organization name<input value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={180} /></label>
+      <label>Default employee language<select value={defaultEmployeeLanguage} onChange={(event) => setDefaultEmployeeLanguage(event.target.value as 'en' | 'af' | 'pt')}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label>
       <button className="primary">Save organization <b>→</b></button>
     </form> : <p>Create an organization workspace first from the Organization page.</p>}
   </article>;

@@ -85,19 +85,19 @@ export async function getOrganizationDashboard(accessToken: string, organization
 export async function createInvitation(accessToken: string, organizationId: string, email: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/${organizationId}/invitations`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   const payload = await response.json().catch(() => ({})) as {
-    invitation?: { email: string; token: string; expiresAt: string };
+    invitation?: { id: string; email: string; expiresAt: string };
     message?: string;
     emailDelivered?: boolean;
   };
-  if (payload.invitation?.token) {
-    return {
-      ...payload.invitation,
-      emailDelivered: response.ok ? true : Boolean(payload.emailDelivered),
-      deliveryMessage: response.ok ? null : (payload.message ?? 'Invitation created, but email delivery failed.'),
-    };
-  }
   if (!response.ok) throw new Error(payload.message ?? 'Invitation could not be created');
-  throw new Error('Invitation could not be created');
+  if (!payload.invitation) throw new Error('Invitation could not be created');
+  return {
+    id: payload.invitation.id,
+    email: payload.invitation.email,
+    expiresAt: payload.invitation.expiresAt,
+    emailDelivered: payload.emailDelivered !== false,
+    deliveryMessage: null as string | null,
+  };
 }
 
 export async function previewInvitation(token: string) {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import { createServiceClient } from '../lib/supabase.js';
+import { requireScoringClient } from '../lib/supabase.js';
 
 const QUESTION_COUNT = 30;
 const PASS_PERCENT = 80;
@@ -18,9 +18,9 @@ type CertificationQuestion = {
 };
 
 async function hasCompletedTraining(client: SupabaseClient, userId: string) {
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY ? createServiceClient() : client;
+  const scoring = requireScoringClient(client);
   const [{ data: modules, error: modulesError }, { data: progress, error: progressError }] = await Promise.all([
-    service.from('training_modules').select('id').eq('is_published', true).eq('is_assessment', false),
+    scoring.from('training_modules').select('id').eq('is_published', true).eq('is_assessment', false),
     client.from('training_progress').select('module_id, completed_at').eq('user_id', userId),
   ]);
   if (modulesError) throw modulesError;
@@ -30,8 +30,8 @@ async function hasCompletedTraining(client: SupabaseClient, userId: string) {
 }
 
 async function loadQuestions(client: SupabaseClient): Promise<CertificationQuestion[]> {
-  const contentClient = process.env.SUPABASE_SERVICE_ROLE_KEY ? createServiceClient() : client;
-  const { data, error } = await contentClient
+  const scoring = requireScoringClient(client);
+  const { data, error } = await scoring
     .from('scenarios')
     .select('id, content, training_modules!inner(is_published, is_assessment), scenario_options(id, option_key, content, is_correct)')
     .eq('training_modules.is_published', true)
@@ -47,16 +47,31 @@ async function loadQuestions(client: SupabaseClient): Promise<CertificationQuest
   }));
 }
 
+function toPublicQuestions(questions: CertificationQuestion[]) {
+  return questions.map((question) => ({
+    scenarioId: question.scenarioId,
+    content: question.content,
+    options: question.options.map(({ id, optionKey, content }) => ({ id, optionKey, content })),
+  }));
+}
+
 export async function startCertificationAssessment(client: SupabaseClient, user: User) {
   if (!(await hasCompletedTraining(client, user.id))) throw new Error('TRAINING_REQUIRED');
   const questions = await loadQuestions(client);
   const expiresAt = new Date(Date.now() + TIME_LIMIT_MINUTES * 60_000).toISOString();
   const { data: assessment, error } = await client.from('certification_assessments').insert({ user_id: user.id, expires_at: expiresAt }).select('id, expires_at').single();
   if (error) throw error;
-  return { assessmentId: assessment.id, expiresAt: assessment.expires_at, timeLimitMinutes: TIME_LIMIT_MINUTES, passPercent: PASS_PERCENT, questions };
+  return {
+    assessmentId: assessment.id,
+    expiresAt: assessment.expires_at,
+    timeLimitMinutes: TIME_LIMIT_MINUTES,
+    passPercent: PASS_PERCENT,
+    questions: toPublicQuestions(questions),
+  };
 }
 
 export async function submitCertificationAssessment(client: SupabaseClient, user: User, input: z.infer<typeof certificationSubmissionSchema>) {
+  const scoring = requireScoringClient(client);
   const { data: assessment, error: assessmentError } = await client.from('certification_assessments').select('id, expires_at, completed_at').eq('id', input.assessmentId).eq('user_id', user.id).single();
   if (assessmentError) throw assessmentError;
   if (assessment.completed_at) throw new Error('CERTIFICATION_ALREADY_SUBMITTED');
@@ -75,14 +90,14 @@ export async function submitCertificationAssessment(client: SupabaseClient, user
   const correct = scored.filter((answer) => answer.isCorrect).length;
   const score = Math.round((correct / QUESTION_COUNT) * 100);
   const passed = score >= PASS_PERCENT;
-  const { error: answersError } = await client.from('certification_answers').insert(scored.map((answer) => ({
+  const { error: answersError } = await scoring.from('certification_answers').insert(scored.map((answer) => ({
     assessment_id: input.assessmentId,
     scenario_id: answer.scenarioId,
     selected_option_id: answer.selectedOptionId,
     is_correct: answer.isCorrect,
   })));
   if (answersError) throw answersError;
-  const { error: updateError } = await client.from('certification_assessments').update({ completed_at: new Date().toISOString(), score, passed }).eq('id', input.assessmentId).eq('user_id', user.id);
+  const { error: updateError } = await scoring.from('certification_assessments').update({ completed_at: new Date().toISOString(), score, passed }).eq('id', input.assessmentId).eq('user_id', user.id);
   if (updateError) throw updateError;
   return { score, passed, passPercent: PASS_PERCENT };
 }

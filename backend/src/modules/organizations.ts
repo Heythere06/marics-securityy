@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildOrganizationInvitationEmail, isEmailConfigured, sendEmail } from '../lib/email.js';
-import { createServiceClient } from '../lib/supabase.js';
+import { createServiceClient, toPublicInvitation } from '../lib/supabase.js';
 
 export const organizationSchema = z.object({ name: z.string().trim().min(2).max(180) });
 export const organizationSettingsSchema = z.object({ name: z.string().trim().min(2).max(180).optional(), defaultEmployeeLanguage: z.enum(['en', 'af', 'pt']).optional() });
@@ -66,12 +66,16 @@ export async function createInvitation(client: SupabaseClient, organizationId: s
   } catch (error) {
     if (error instanceof Error && (error.message === 'INVITATION_EMAIL_FAILED' || error.message === 'INVITATION_EMAIL_NOT_CONFIGURED')) {
       const deliveryError = new Error(error.message);
-      deliveryError.cause = { ...(error.cause as object | undefined), invitation };
+      // Never attach the raw invite token to HTTP error causes (confidentiality).
+      deliveryError.cause = {
+        ...(error.cause as object | undefined),
+        invitation: toPublicInvitation(invitation),
+      };
       throw deliveryError;
     }
     throw error;
   }
-  return invitation;
+  return { ...toPublicInvitation(invitation), emailDelivered: true as const };
 }
 
 export async function previewInvitationByToken(rawToken: string) {
@@ -190,19 +194,41 @@ export async function acceptInvitation(client: SupabaseClient, token: string) {
     .is('accepted_at', null);
   if (markError) throw markError;
 
-  await service.from('profiles')
-    .update({ role: 'employee', account_type: 'individual', updated_at: new Date().toISOString() })
-    .eq('id', authUser.user.id)
-    .eq('role', 'individual');
+  const { error: promoteError } = await service.rpc('promote_user_to_employee', { target_user: authUser.user.id });
+  if (promoteError) throw promoteError;
 
   return { organizationId: invitation.organization_id };
 }
 
 export async function removeOrganizationMember(client: SupabaseClient, organizationId: string, userId: string) {
   await requireOrganizationAdmin(client, organizationId);
-  const { error } = await client.from('organization_memberships').delete().eq('organization_id', organizationId).eq('user_id', userId);
-  if (error) throw error;
-  return { organizationId, userId, removed: true };
+  const { data, error } = await client.rpc('remove_organization_member', {
+    target_org: organizationId,
+    target_user: userId,
+  });
+  if (error) {
+    const detail = `${error.message} ${error.details ?? ''} ${error.hint ?? ''} ${error.code ?? ''}`;
+    const upper = detail.toUpperCase();
+    if (upper.includes('CANNOT_REMOVE_SELF')) throw new Error('CANNOT_REMOVE_SELF');
+    if (upper.includes('LAST_ADMIN')) throw new Error('LAST_ADMIN');
+    if (upper.includes('MEMBER_NOT_FOUND')) throw new Error('MEMBER_NOT_FOUND');
+    if (upper.includes('FORBIDDEN') || upper.includes('AUTH_REQUIRED')) throw new Error('FORBIDDEN');
+    // Fallback only when the Batch 3 RPC is not applied yet.
+    if (!/does not exist|PGRST202|42883/i.test(detail)) throw error;
+    const { error: deleteError } = await client
+      .from('organization_memberships')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('user_id', userId);
+    if (deleteError) throw deleteError;
+    return { organizationId, userId, removed: true };
+  }
+  const result = data as { organizationId?: string; userId?: string; removed?: boolean } | null;
+  return {
+    organizationId: result?.organizationId ?? organizationId,
+    userId: result?.userId ?? userId,
+    removed: result?.removed ?? true,
+  };
 }
 
 export async function getOrganizationDashboard(client: SupabaseClient, organizationId: string) {

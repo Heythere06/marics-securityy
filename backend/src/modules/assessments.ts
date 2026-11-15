@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { awarenessStanding, vulnerabilityFromWeakCount } from '../lib/riskStanding.js';
-import { createServiceClient } from '../lib/supabase.js';
+import { requireScoringClient } from '../lib/supabase.js';
 
 export const ASSESSMENT_SCENARIO_ORDER = [
   'urgency',
@@ -65,8 +65,8 @@ export async function getOnboardingAssessment(client: SupabaseClient) {
 }
 
 export async function submitAssessment(client: SupabaseClient, user: User, input: z.infer<typeof assessmentSubmissionSchema>) {
-  const contentClient = process.env.SUPABASE_SERVICE_ROLE_KEY ? createServiceClient() : client;
-  const { data: scenarios, error: scenarioError } = await contentClient
+  const scoring = requireScoringClient(client);
+  const { data: scenarios, error: scenarioError } = await scoring
     .from('scenarios')
     .select('id, slug, risk_dimensions, scenario_options(option_key, is_correct)')
     .in('slug', [...ASSESSMENT_SCENARIO_ORDER]);
@@ -84,14 +84,14 @@ export async function submitAssessment(client: SupabaseClient, user: User, input
 
   const profileFields = buildRiskProfileFromAnswers(scoredAnswers);
 
-  const { data: assessment, error: assessmentError } = await client
+  const { data: assessment, error: assessmentError } = await scoring
     .from('assessments')
     .insert({ user_id: user.id, completed_at: new Date().toISOString() })
     .select('id')
     .single();
   if (assessmentError) throw assessmentError;
 
-  const { error: answersError } = await client.from('assessment_answers').insert(scoredAnswers.map((answer, index) => ({
+  const { error: answersError } = await scoring.from('assessment_answers').insert(scoredAnswers.map((answer, index) => ({
     assessment_id: assessment.id,
     question_key: input.answers[index].scenarioSlug,
     selected_option: input.answers[index].optionKey === 'A' ? 0 : input.answers[index].optionKey === 'B' ? 1 : 2,
@@ -100,7 +100,7 @@ export async function submitAssessment(client: SupabaseClient, user: User, input
   })));
   if (answersError) throw answersError;
 
-  const { data: profile, error: profileError } = await client.from('risk_profiles').upsert({
+  const { data: profile, error: profileError } = await scoring.from('risk_profiles').upsert({
     user_id: user.id,
     strongest_dimension: profileFields.strongest_dimension,
     focus_dimension: profileFields.focus_dimension,

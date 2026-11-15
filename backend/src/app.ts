@@ -526,23 +526,26 @@ export function buildApp() {
       const auth = await requireUser(request);
       const input = invitationSchema.parse(request.body);
       const invitation = await createInvitation(createAuthenticatedClient(auth.accessToken!), (request.params as { organizationId: string }).organizationId, input.email);
-      return reply.code(201).send({ invitation });
+      return reply.code(201).send({ invitation, emailDelivered: true });
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to invite an employee.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_INVITATION', message: 'Enter a valid employee email address.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to invite employees to this organization.' });
       if (error instanceof Error && error.message === 'INVITATION_EMAIL_NOT_CONFIGURED') {
-        const invitation = (error.cause as { invitation?: { id: string; email: string; token: string; expiresAt: string } } | undefined)?.invitation;
-        return reply.code(503).send({ error: 'INVITATION_EMAIL_NOT_CONFIGURED', message: 'Invitation email delivery is not configured on the server.', invitation: invitation ?? null, emailDelivered: false });
+        const invitation = (error.cause as { invitation?: { id: string; email: string; expiresAt: string } } | undefined)?.invitation;
+        return reply.code(503).send({
+          error: 'INVITATION_EMAIL_NOT_CONFIGURED',
+          message: 'Invitation email delivery is not configured. Configure SMTP or Resend so invite links stay in email only.',
+          invitation: invitation ?? null,
+          emailDelivered: false,
+        });
       }
       if (error instanceof Error && error.message === 'INVITATION_EMAIL_FAILED') {
-        const providerError = error.cause as { status?: number; name?: string; message?: string; invitation?: { id: string; email: string; token: string; expiresAt: string } } | undefined;
-        request.log.error({ provider: providerError }, 'Invitation email provider rejected delivery');
+        const providerError = error.cause as { status?: number; name?: string; message?: string; invitation?: { id: string; email: string; expiresAt: string } } | undefined;
+        request.log.error({ providerStatus: providerError?.status, providerName: providerError?.name }, 'Invitation email provider rejected delivery');
         return reply.code(502).send({
           error: 'INVITATION_EMAIL_FAILED',
-          message: providerError?.message ?? 'The invitation was created, but the email provider rejected delivery.',
-          provider: providerError?.name ?? 'unknown_error',
-          providerStatus: providerError?.status,
+          message: 'The invitation was created, but the email could not be delivered. Fix email delivery and invite again — invite links are not returned over the API.',
           invitation: providerError?.invitation ?? null,
           emailDelivered: false,
         });
@@ -605,6 +608,9 @@ export function buildApp() {
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organization employees.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MEMBER', message: 'Choose a valid employee.' });
+      if (error instanceof Error && error.message === 'CANNOT_REMOVE_SELF') return reply.code(400).send({ error: 'CANNOT_REMOVE_SELF', message: 'You cannot remove yourself from the organization.' });
+      if (error instanceof Error && error.message === 'LAST_ADMIN') return reply.code(409).send({ error: 'LAST_ADMIN', message: 'Promote another administrator before removing the last admin.' });
+      if (error instanceof Error && error.message === 'MEMBER_NOT_FOUND') return reply.code(404).send({ error: 'MEMBER_NOT_FOUND', message: 'That employee is not in this organization.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to manage this organization.' });
       request.log.error(error, 'Member removal failed');
       return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not remove this employee.' });

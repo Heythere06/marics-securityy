@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
-import { createServiceClient } from '../lib/supabase.js';
+import { requireScoringClient } from '../lib/supabase.js';
 import { generatePracticeScenarioDraft } from './ai.js';
 import { hasAttemptedEveryScenario } from './certificates.js';
 
@@ -18,12 +18,12 @@ export const aiPracticeAnswerSchema = z.object({
 type PracticeOption = {
   option_key: 'A' | 'B' | 'C' | 'D';
   content: Record<string, string>;
-  is_correct: boolean;
-  feedback: Record<string, { choice: string; explanation: string }>;
+  is_correct?: boolean;
+  feedback?: Record<string, { choice: string; explanation: string }>;
 };
 
 function contentClient(client: SupabaseClient) {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY ? createServiceClient() : client;
+  return requireScoringClient(client);
 }
 
 async function assertManualModuleComplete(client: SupabaseClient, userId: string, moduleId: string) {
@@ -69,7 +69,8 @@ function threatCategoryFromSlug(slug: string) {
 
 async function applyPracticeToRiskProfile(client: SupabaseClient, userId: string, riskDimensions: string[], isCorrect: boolean) {
   if (!riskDimensions.length) return;
-  const { data: profile, error } = await client.from('risk_profiles').select('strongest_dimension, focus_dimension, awareness_score, category_scores').eq('user_id', userId).maybeSingle();
+  const scoring = requireScoringClient(client);
+  const { data: profile, error } = await scoring.from('risk_profiles').select('strongest_dimension, focus_dimension, awareness_score, category_scores').eq('user_id', userId).maybeSingle();
   if (error) throw error;
   if (!profile) return;
 
@@ -81,7 +82,7 @@ async function applyPracticeToRiskProfile(client: SupabaseClient, userId: string
   const weak = entries.filter(([, score]) => score === 'weak').map(([dimension]) => dimension);
   const strong = entries.filter(([, score]) => score === 'strong').map(([dimension]) => dimension);
   const awarenessScore = entries.length ? Math.round((strong.length / entries.length) * 100) : profile.awareness_score;
-  const { error: updateError } = await client.from('risk_profiles').update({
+  const { error: updateError } = await scoring.from('risk_profiles').update({
     category_scores: categoryScores,
     focus_dimension: weak[0] ?? profile.focus_dimension,
     strongest_dimension: strong[0] ?? profile.strongest_dimension,
@@ -120,27 +121,32 @@ export async function generateAiPracticeScenario(client: SupabaseClient, user: U
       message: draft.scenario,
     },
   };
-  const options: PracticeOption[] = draft.options.map((option) => ({
+  const publicOptions = draft.options.map((option) => ({
     option_key: option.key,
     content: { [input.language]: option.text },
-    is_correct: option.key === draft.correctOption,
-    feedback: {
+  }));
+  const optionFeedback = Object.fromEntries(draft.options.map((option) => [
+    option.key,
+    {
       [input.language]: {
         choice: option.key === draft.correctOption ? draft.correctResponse : 'That response leaves more risk on the table.',
         explanation: draft.explanation,
       },
     },
-  }));
+  ]));
   const riskDimensions = [draft.manipulationTechnique].filter(Boolean);
+  const scoring = requireScoringClient(client);
 
-  const { data: inserted, error: insertError } = await client.from('ai_practice_scenarios').insert({
+  const { data: inserted, error: insertError } = await scoring.from('ai_practice_scenarios').insert({
     user_id: user.id,
     module_id: module.id,
     slug,
     language: input.language,
     content,
     risk_dimensions: riskDimensions,
-    options,
+    options: publicOptions,
+    correct_option_key: draft.correctOption,
+    option_feedback: optionFeedback,
     provider: 'claude',
     model: process.env.AI_MODEL ?? 'claude-3-5-haiku-latest',
   }).select('id, slug, content, risk_dimensions, options, language').single();
@@ -195,9 +201,10 @@ export async function listAiPracticeScenarios(client: SupabaseClient, userId: st
 }
 
 export async function recordAiPracticeAnswer(client: SupabaseClient, user: User, scenarioSlug: string, input: z.infer<typeof aiPracticeAnswerSchema>) {
-  const { data: scenario, error: scenarioError } = await client
+  const scoring = requireScoringClient(client);
+  const { data: scenario, error: scenarioError } = await scoring
     .from('ai_practice_scenarios')
-    .select('id, module_id, risk_dimensions, options')
+    .select('id, module_id, risk_dimensions, options, correct_option_key, option_feedback')
     .eq('slug', scenarioSlug)
     .eq('user_id', user.id)
     .maybeSingle();
@@ -206,10 +213,14 @@ export async function recordAiPracticeAnswer(client: SupabaseClient, user: User,
 
   const options = scenario.options as PracticeOption[];
   const selected = options.find((option) => option.option_key === input.optionKey);
-  const correct = options.find((option) => option.is_correct);
-  if (!selected || !correct) throw new Error('SCENARIO_OPTIONS_INVALID');
+  const correctKey = scenario.correct_option_key as 'A' | 'B' | 'C' | 'D' | null;
+  if (!selected || !correctKey) throw new Error('SCENARIO_OPTIONS_INVALID');
+  const isCorrect = selected.option_key === correctKey;
+  const feedbackByKey = (scenario.option_feedback ?? {}) as Record<string, Record<string, { choice: string; explanation: string }>>;
+  const selectedFeedback = feedbackByKey[selected.option_key] ?? {};
+  const correctFeedback = feedbackByKey[correctKey] ?? selectedFeedback;
 
-  const { data: previousAttempts, error: previousError } = await client
+  const { data: previousAttempts, error: previousError } = await scoring
     .from('ai_practice_attempts')
     .select('is_correct')
     .eq('user_id', user.id)
@@ -218,15 +229,15 @@ export async function recordAiPracticeAnswer(client: SupabaseClient, user: User,
   const wasAttempted = (previousAttempts ?? []).length > 0;
   const wasCorrect = (previousAttempts ?? []).some((attempt) => attempt.is_correct);
 
-  const { error: attemptError } = await client.from('ai_practice_attempts').insert({
+  const { error: attemptError } = await scoring.from('ai_practice_attempts').insert({
     user_id: user.id,
     ai_scenario_id: scenario.id,
     selected_option_key: input.optionKey,
-    is_correct: selected.is_correct,
+    is_correct: isCorrect,
   });
   if (attemptError) throw attemptError;
 
-  const { data: currentProgress, error: progressError } = await client
+  const { data: currentProgress, error: progressError } = await scoring
     .from('training_progress')
     .select('scenarios_attempted, scenarios_correct, completed_at, ai_scenarios_attempted, ai_scenarios_correct')
     .eq('user_id', user.id)
@@ -234,27 +245,27 @@ export async function recordAiPracticeAnswer(client: SupabaseClient, user: User,
     .maybeSingle();
   if (progressError) throw progressError;
 
-  const { data: progress, error: upsertError } = await client.from('training_progress').upsert({
+  const { data: progress, error: upsertError } = await scoring.from('training_progress').upsert({
     user_id: user.id,
     module_id: scenario.module_id,
     scenarios_attempted: currentProgress?.scenarios_attempted ?? 0,
     scenarios_correct: currentProgress?.scenarios_correct ?? 0,
     completed_at: currentProgress?.completed_at ?? null,
     ai_scenarios_attempted: (currentProgress?.ai_scenarios_attempted ?? 0) + (wasAttempted ? 0 : 1),
-    ai_scenarios_correct: (currentProgress?.ai_scenarios_correct ?? 0) + (!wasCorrect && selected.is_correct ? 1 : 0),
+    ai_scenarios_correct: (currentProgress?.ai_scenarios_correct ?? 0) + (!wasCorrect && isCorrect ? 1 : 0),
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,module_id' }).select('scenarios_attempted, scenarios_correct, ai_scenarios_attempted, ai_scenarios_correct, completed_at, updated_at').single();
   if (upsertError) throw upsertError;
 
-  await applyPracticeToRiskProfile(client, user.id, scenario.risk_dimensions ?? [], selected.is_correct);
+  await applyPracticeToRiskProfile(client, user.id, scenario.risk_dimensions ?? [], isCorrect);
 
-  const languageKeys = Object.keys(selected.feedback ?? {});
+  const languageKeys = Object.keys(selectedFeedback);
   const language = languageKeys.includes('en') ? 'en' : languageKeys[0] ?? 'en';
   return {
-    isCorrect: selected.is_correct,
-    feedback: Object.fromEntries(Object.entries(selected.feedback).map(([key, value]) => [key, value.choice])),
-    explanation: Object.fromEntries(Object.entries(correct.feedback).map(([key, value]) => [key, value.explanation])),
-    correctOptionKey: correct.option_key,
+    isCorrect,
+    feedback: Object.fromEntries(Object.entries(selectedFeedback).map(([key, value]) => [key, value.choice])),
+    explanation: Object.fromEntries(Object.entries(correctFeedback).map(([key, value]) => [key, value.explanation])),
+    correctOptionKey: correctKey,
     progress,
     source: 'ai' as const,
     language,

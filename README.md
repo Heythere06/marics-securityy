@@ -20,9 +20,9 @@ docs/      architecture, API, security, and delivery decisions
 
 The frontend runs on `http://localhost:5173` and the API on `http://localhost:4000`. The API health check is `GET /health`.
 
-The current repository includes database-backed onboarding assessment, risk profiles, interactive training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, public demo requests, and a server-side AI adapter. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes. AI generation remains a later product phase and is not yet a complete user-facing workflow.
+The current repository includes database-backed onboarding assessment, risk profiles, interactive training, progress, recommendations, organizations, team-risk reports, audited admin controls, a timed 30-question certification assessment, public demo requests, SMTP/Resend invitations, opening-quiz standing levels, and **user-facing Claude AI practice** after manual module scenarios are complete. Certificates remain locked until every published training module is complete and the learner passes the certification assessment with at least 80% in 20 minutes.
 
-Supabase migrations must be applied in filename order through `202611020003_invitation_email_match.sql` for the current authentication, individual, employee, organization-admin, MARICS-admin, onboarding, audit, organization-risk, localized scenario-authoring, bounded AI follow-up, verified training-completion, certification assessment, demo requests, and interactive email/SMS/WhatsApp/voice/job/mobile-money training flows. Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
+Supabase migrations must be applied in filename order through `202611150002_org_admin_hardening.sql` (AI practice, CIA integrity hardening, and org-admin UPDATE/DELETE RLS plus `default_employee_language`). Do not run excerpts independently in the SQL editor. If earlier snippets were applied manually or a policy already exists, apply the repair migration before the later migrations. The admin dashboard reads its counts and recent records from the `get_admin_overview()` PostgreSQL function created by migration `202609190008_admin_control_plane.sql`.
 
 ## Supabase setup
 
@@ -40,12 +40,15 @@ Signup never grants `organization_admin`. That promotion happens only through `c
 
 ## Project Documentation
 
-Read [docs/project-status.md](docs/project-status.md) for the complete project description, current structure, implemented features, incomplete work, migration order, validation commands, next steps, potential features, and outstanding product decisions.
+**Start here:** [docs/COMPLETE-SYSTEM-GUIDE.md](docs/COMPLETE-SYSTEM-GUIDE.md) — full product description, architecture, APIs, migrations, recent changes, known bugs, and ops.
 
-Additional documentation:
+Also useful:
 
+- [docs/project-status.md](docs/project-status.md) — earlier status narrative (may lag newest features).
 - [docs/development-phases.md](docs/development-phases.md) — staged delivery status.
 - [docs/architecture.md](docs/architecture.md) — runtime and domain boundaries.
 - [docs/api.md](docs/api.md) — authenticated API contract.
 - [docs/database.md](docs/database.md) — schema, migrations, and RLS.
 - [docs/security.md](docs/security.md) — security model, privacy, and release threats.
+- [docs/bug-ledger.md](docs/bug-ledger.md) — launch-readiness audit (partially stale; cross-check the complete guide).
+- [docs/FULL-ISSUES-INVENTORY.md](docs/FULL-ISSUES-INVENTORY.md) — exhaustive current bug/UX/security inventory (P0–P4).
