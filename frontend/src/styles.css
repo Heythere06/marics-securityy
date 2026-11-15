@@ -612,9 +612,21 @@ button:focus-visible { outline: 3px solid #d25d38; outline-offset: 3px; }
 
 .sms-header { width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; border: 0; background: transparent; cursor: pointer; }.sms-header.seen, .sms-bubble.seen { outline: 1px solid #7a9a7a; }.sms-thread .sms-bubble { width: 100%; text-align: left; border: 0; background: inherit; cursor: pointer; font: inherit; color: inherit; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.assistant-view { max-width: 860px; margin: 0 auto; }
-.assistant-view .page-header { max-width: none; }
-.chat-shell { display: grid; grid-template-rows: 1fr auto auto; min-height: min(62vh, 640px); border: 1px solid #d5e0e8; border-radius: 18px; overflow: hidden; background: #fff; box-shadow: 0 16px 36px rgba(16, 37, 54, .08); }
+.content.assistant-view {
+  max-width: none;
+  min-height: 100vh;
+  background-image: linear-gradient(180deg, rgba(10, 28, 44, .58) 0%, rgba(10, 28, 44, .28) 42%, rgba(10, 28, 44, .68) 100%), url('/assets/marics-ai-coach.jpg');
+  background-size: cover;
+  background-position: center 28%;
+  background-repeat: no-repeat;
+}
+.assistant-view .page-header,
+.assistant-view .chat-shell { max-width: 860px; margin-left: auto; margin-right: auto; }
+.assistant-view .page-header h1 { color: #f4f8fb; }
+.assistant-view .page-header .lede { color: #d7e4ee; }
+.assistant-view .page-header .eyebrow { color: #f0b39a; }
+.assistant-view .page-header .text-button { color: #ffd7c8; }
+.chat-shell { display: grid; grid-template-rows: 1fr auto auto; min-height: min(62vh, 640px); border: 1px solid rgba(213, 224, 232, .55); border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, .94); box-shadow: 0 16px 36px rgba(16, 37, 54, .22); }
 .chat-thread { min-height: 320px; max-height: min(52vh, 520px); overflow-y: auto; padding: 22px; display: grid; gap: 12px; align-content: start; background: linear-gradient(180deg, #f4f8fb 0%, #e7eef4 100%); }
 .chat-bubble { max-width: 78%; padding: 12px 14px; display: grid; gap: 6px; font-size: 14px; line-height: 1.55; color: #102536; white-space: pre-wrap; }
 .chat-bubble.user { margin-left: auto; color: #fff; background: #d25d38; border-radius: 16px 16px 4px 16px; }
