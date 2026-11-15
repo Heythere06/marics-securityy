@@ -54,6 +54,28 @@ describe('health endpoint', () => {
     }
   });
 
+  it('fails fast in production when no CORS origins are configured', () => {
+    const previousEnvironment = {
+      nodeEnv: process.env.NODE_ENV,
+      frontendUrl: process.env.FRONTEND_URL,
+      allowedOrigins: process.env.ALLOWED_ORIGINS,
+    };
+    process.env.NODE_ENV = 'production';
+    delete process.env.FRONTEND_URL;
+    delete process.env.ALLOWED_ORIGINS;
+
+    try {
+      expect(() => buildApp()).toThrow(/CORS_ORIGINS_REQUIRED/);
+    } finally {
+      if (previousEnvironment.nodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousEnvironment.nodeEnv;
+      if (previousEnvironment.frontendUrl === undefined) delete process.env.FRONTEND_URL;
+      else process.env.FRONTEND_URL = previousEnvironment.frontendUrl;
+      if (previousEnvironment.allowedOrigins === undefined) delete process.env.ALLOWED_ORIGINS;
+      else process.env.ALLOWED_ORIGINS = previousEnvironment.allowedOrigins;
+    }
+  });
+
   it('protects AI generation from unauthenticated callers', async () => {
     const response = await app.inject({
       method: 'POST',

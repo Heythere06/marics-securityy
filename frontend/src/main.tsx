@@ -1,7 +1,7 @@
 import { Component, StrictMode, Suspense, lazy, useCallback, useEffect, useRef, useState, type ChangeEvent, type Dispatch, type ErrorInfo, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session } from '@supabase/supabase-js';
-import { ApiError, acceptOrganizationInvitation, createAdminModule, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, generateAiPracticeScenario, getAdminAnalytics, getAdminAuditLog, getAdminDemoRequests, getAdminOverview, getAdminTrainingCatalog, getAiPracticeScenario, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getScenarioWhy, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, listAiPracticeScenarios, previewInvitation, removeOrganizationMember, requestVerificationEmail, saveAiPracticeAnswer, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, startCertificationAssessment, submitAssessment as saveAssessment, submitCertificationAssessment, submitDemoRequest, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, verifyCertificate, type AdminOverview, type AdminTrainingModule, type AiPracticeScenarioSummary, type CertificationAssessment, type CertificationGate, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
+import { ApiError, acceptOrganizationInvitation, createAdminModule, createInvitation, createOrganization, createOrganizationCsvReport, createOrganizationReport, generateAiPracticeScenario, getAdminAnalytics, getAdminAuditLog, getAdminDemoRequests, getAdminOverview, getAdminTrainingCatalog, getAiPracticeScenario, getOnboardingAssessment, getOrganizationDashboard, getOrganizations, getProfile, getRiskProfile, getScenarioWhy, getTrainingModules, getTrainingScenario, getTrainingSummary, getUserCertificates, isAbortError, listAiPracticeScenarios, previewInvitation, removeOrganizationMember, requestVerificationEmail, saveAiPracticeAnswer, saveTrainingAnswer, searchAdminOrganizations, searchAdminUsers, setAdminLanguages, setAdminModulePublished, startCertificationAssessment, submitAssessment as saveAssessment, submitCertificationAssessment, submitDemoRequest, updateAdminUserRole, updateAdminUserSuspension, updateLanguage, updateOrganization, updateProfileSettings, verifyCertificate, type AdminOverview, type AdminTrainingModule, type AiPracticeScenarioSummary, type CertificationAssessment, type CertificationGate, type OnboardingScenario, type RiskProfile, type TrainingModule, type TrainingScenario, type UserCertificate, type VerifiedCertificate } from './lib/api';
 import { supabase } from './lib/supabase';
 import { getTranslations, type Language } from './i18n';
 import { awarenessStanding, dimensionStanding, vulnerabilityFromWeakCount } from './lib/riskStanding';
@@ -57,7 +57,22 @@ function App() {
   const [accountType, setAccountType] = useState('individual');
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [assessmentSaving, setAssessmentSaving] = useState(false);
+  const trainingAiAbortRef = useRef<AbortController | null>(null);
   const t = getTranslations(language);
+
+  const abortTrainingAi = () => {
+    trainingAiAbortRef.current?.abort();
+    trainingAiAbortRef.current = null;
+    setWhyLoading(false);
+    setAiPracticeGenerating(false);
+  };
+
+  const beginTrainingAiRequest = () => {
+    trainingAiAbortRef.current?.abort();
+    const controller = new AbortController();
+    trainingAiAbortRef.current = controller;
+    return controller;
+  };
   const verificationId = window.location.pathname.match(/^\/verify\/([0-9a-f-]{36})\/?$/i)?.[1] ?? null;
   const canTrain = role === 'individual' || role === 'employee' || role === 'organization_admin';
   // Opening quiz is required before any learner/admin workspace features unlock.
@@ -233,6 +248,7 @@ function App() {
 
   const selectTrainingScenario = async (scenarioSlug: string, moduleSlug?: string) => {
     if (!session || !scenarioSlug) return;
+    abortTrainingAi();
     const isAi = scenarioSlug.startsWith('ai-practice-');
     if (moduleSlug) setSelectedTrainingModuleSlug(moduleSlug);
     else if (!isAi) {
@@ -273,6 +289,7 @@ function App() {
       void selectTrainingScenario(module.scenarioSlugs[0], moduleSlug);
       return;
     }
+    abortTrainingAi();
     setSelectedScenarioSlug(null);
     setTrainingScenario(null);
     setTrainingAnswer(null);
@@ -285,17 +302,23 @@ function App() {
 
   const generateMoreAiPractice = async () => {
     if (!session || !selectedTrainingModuleSlug) return;
+    const moduleSlug = selectedTrainingModuleSlug;
+    const controller = beginTrainingAiRequest();
     setAiPracticeGenerating(true);
     setTrainingError(null);
     try {
-      const scenario = await generateAiPracticeScenario(session.access_token, selectedTrainingModuleSlug, language);
-      await refreshAiPractice(selectedTrainingModuleSlug);
-      void selectTrainingScenario(scenario.slug, selectedTrainingModuleSlug);
+      const scenario = await generateAiPracticeScenario(session.access_token, moduleSlug, language, 'intermediate', controller.signal);
+      if (controller.signal.aborted) return;
+      await refreshAiPractice(moduleSlug);
+      if (controller.signal.aborted) return;
+      void selectTrainingScenario(scenario.slug, moduleSlug);
       const profile = await getRiskProfile(session.access_token);
-      setRiskProfile(profile);
+      if (!controller.signal.aborted) setRiskProfile(profile);
     } catch (error) {
+      if (isAbortError(error) || controller.signal.aborted) return;
       setTrainingError(error instanceof Error ? error.message : 'AI practice could not be generated.');
     } finally {
+      if (trainingAiAbortRef.current === controller) trainingAiAbortRef.current = null;
       setAiPracticeGenerating(false);
     }
   };
@@ -350,6 +373,7 @@ function App() {
 
   const navigate = (nextView: View) => {
     if (needsOnboarding && nextView !== 'assessment') return;
+    if (view === 'training' && nextView !== 'training') abortTrainingAi();
     setView(nextView);
   };
 
@@ -391,10 +415,12 @@ function App() {
     const selectedAnswer = trainingScenario.options.find((option) => option.option_key === trainingAnswer);
     const correctAnswer = trainingScenario.options.find((option) => option.option_key === trainingResult.correctOptionKey);
     if (!selectedAnswer || !correctAnswer) return;
+    const requestSlug = trainingScenario.slug;
+    const controller = beginTrainingAiRequest();
     setWhyLoading(true);
     setWhyError(null);
     try {
-      setWhyExplanation(await getScenarioWhy(session.access_token, {
+      const explanation = await getScenarioWhy(session.access_token, {
         language,
         question: {
           moduleTitle: trainingScenario.module.title[language] ?? trainingScenario.module.title.en ?? trainingScenario.module.slug,
@@ -410,17 +436,37 @@ function App() {
           existingExplanation: trainingResult.explanation,
           userQuestion: userQuestion.trim(),
         },
-      }));
+      }, controller.signal);
+      if (controller.signal.aborted || selectedScenarioSlug !== requestSlug) return;
+      setWhyExplanation(explanation);
     } catch (error) {
+      if (isAbortError(error) || controller.signal.aborted) return;
       setWhyError(error instanceof Error ? error.message : 'A focused explanation could not be generated.');
     } finally {
+      if (trainingAiAbortRef.current === controller) trainingAiAbortRef.current = null;
       setWhyLoading(false);
     }
   };
 
+  const goToNextTrainingScenario = () => {
+    const module = trainingModules.find((entry) => entry.slug === selectedTrainingModuleSlug);
+    const manualSlugs = module?.scenarioSlugs ?? [];
+    const aiSlugs = (selectedTrainingModuleSlug ? aiPracticeByModule[selectedTrainingModuleSlug] ?? [] : []).map((entry) => entry.slug);
+    const current = selectedScenarioSlug ?? '';
+    if (current.startsWith('ai-practice-')) {
+      const currentIndex = aiSlugs.indexOf(current);
+      const nextSlug = currentIndex >= 0 ? aiSlugs[currentIndex + 1] : aiSlugs[0];
+      if (nextSlug) void selectTrainingScenario(nextSlug, selectedTrainingModuleSlug ?? undefined);
+      return;
+    }
+    const currentIndex = manualSlugs.indexOf(current);
+    const nextSlug = currentIndex >= 0 ? manualSlugs[currentIndex + 1] ?? manualSlugs[0] : manualSlugs[0];
+    if (nextSlug) void selectTrainingScenario(nextSlug, selectedTrainingModuleSlug ?? undefined);
+  };
+
   if (!authReady) return <div className="loading-screen">Loading your secure workspace...</div>;
   if (authError && !session) return <main className="error-screen"><section className="auth-panel"><p className="eyebrow">MARICS Security</p><h1>Your secure workspace could not load.</h1><p className="lede" role="alert">{authError}</p><button className="primary" onClick={() => { setAuthError(null); setAuthReady(false); setAuthRetry((attempt) => attempt + 1); }}>Retry workspace <b>&#8594;</b></button><button className="auth-switch" type="button" onClick={() => { setAuthError(null); setSessionExpiredNotice(null); }}>Sign in instead</button></section></main>;
-  if (verificationId) return <CertificateVerificationPage verificationId={verificationId} />;
+  if (verificationId) return <CertificateVerificationPage verificationId={verificationId} language={language} />;
   if (recoveryMode && session) return <PasswordRecoveryScreen onDone={() => setRecoveryMode(false)} />;
   if (!session) return <PublicSite language={language} setLanguage={setLanguage} sessionNotice={sessionExpiredNotice} onClearSessionNotice={() => setSessionExpiredNotice(null)} />;
   if (!profileReady) return <div className="loading-screen">Preparing your workspace...</div>;
@@ -466,7 +512,7 @@ function App() {
         if (recommended) void selectTrainingModule(recommended);
         navigate('training');
       }} onContinue={() => navigate('overview')} /> : <AssessmentView language={language} t={t} loading={assessmentLoading} saving={assessmentSaving} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} openingQuiz={retakingAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your assessment could not be loaded.'); setAssessmentLoading(false); }); }} />)}
-      {view === 'training' && canTrain && <ModuleTrainingView language={language} modules={trainingModules} summary={trainingSummary} selectedModuleSlug={selectedTrainingModuleSlug} onModuleSelect={selectTrainingModule} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={(scenarioSlug) => void selectTrainingScenario(scenarioSlug, selectedTrainingModuleSlug ?? undefined)} onNextScenario={() => { const module = trainingModules.find((entry) => entry.slug === selectedTrainingModuleSlug); const aiSlugs = (selectedTrainingModuleSlug ? aiPracticeByModule[selectedTrainingModuleSlug] ?? [] : []).map((entry) => entry.slug); const slugs = [...(module?.scenarioSlugs ?? []), ...aiSlugs]; const currentIndex = slugs.indexOf(selectedScenarioSlug ?? ''); const nextSlug = slugs[currentIndex + 1] ?? slugs[0]; if (nextSlug) void selectTrainingScenario(nextSlug, selectedTrainingModuleSlug ?? undefined); }} onRetryCatalog={() => {
+      {view === 'training' && canTrain && <ModuleTrainingView language={language} modules={trainingModules} summary={trainingSummary} selectedModuleSlug={selectedTrainingModuleSlug} onModuleSelect={selectTrainingModule} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={(scenarioSlug) => void selectTrainingScenario(scenarioSlug, selectedTrainingModuleSlug ?? undefined)} onNextScenario={goToNextTrainingScenario} onRetryCatalog={() => {
         setTrainingError(null);
         setTrainingLoading(true);
         getTrainingModules(session.access_token).then((availableModules) => {
@@ -481,9 +527,9 @@ function App() {
       }} onOpenCertificates={() => navigate('certificates')} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} streak={trainingStreak} submitting={trainingSubmitting} whyExplanation={whyExplanation} whyError={whyError} whyLoading={whyLoading} whyQuestionOpen={whyQuestionOpen} whyQuestionText={whyQuestionText} onWhyQuestionTextChange={setWhyQuestionText} onWhyQuestionOpenChange={setWhyQuestionOpen} onAskWhy={() => void askScenarioWhy(whyQuestionText)} onAnswer={setTrainingAnswer} onSubmit={submitTrainingAnswer} aiPractice={selectedTrainingModuleSlug ? aiPracticeByModule[selectedTrainingModuleSlug] ?? [] : []} aiPracticeGenerating={aiPracticeGenerating} onGenerateAiPractice={() => void generateMoreAiPractice()} />}
       {view === 'organization' && (role === 'organization_admin' || accountType === 'organization') && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} onOrganizationCreated={async () => { const profile = await getProfile(session.access_token); if (profile?.role) setRole(profile.role); if (profile?.account_type) setAccountType(profile.account_type); }} />}
       {view === 'organization' && role === 'employee' && <EmployeeOrganizationView organizations={organizations} />}
-      {view === 'help' && <HelpCentre />}
+      {view === 'help' && <HelpCentre language={language} />}
       {view === 'reports' && role === 'organization_admin' && <OrganizationReports session={session} organizations={organizations} />}
-      {view === 'progress' && canTrain && <ProgressView summary={trainingSummary} riskProfile={riskProfile} onTraining={() => navigate('training')} onOpenRecommended={() => {
+      {view === 'progress' && canTrain && <ProgressView language={language} summary={trainingSummary} riskProfile={riskProfile} onTraining={() => navigate('training')} onOpenRecommended={() => {
         const recommended = trainingSummary.recommendation?.slug;
         if (recommended) void selectTrainingModule(recommended);
         navigate('training');
@@ -809,20 +855,19 @@ function Sidebar({ role, accountType, displayName, organizationName, language, o
           ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization'], ['settings', 'settings', 'Settings']]
           : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']];
   const accountLabel = accountTypeLabel(role, organizationName);
-  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button onClick={onSignOut}><span>&#8617;</span> Sign out</button><button onClick={() => setView('help')}><span>?</span> Help centre</button></div></aside>;
+  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button type="button" onClick={onSignOut} aria-label="Sign out"><span>&#8617;</span> Sign out</button><button type="button" onClick={() => setView('help')} aria-label="Help centre"><span>?</span> Help centre</button></div></aside>;
 }
 
 function AssessmentView({ language, t, loading, saving, error, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
-  const eyebrow = openingQuiz ? 'OPENING SECURITY QUIZ' : t.assessment.eyebrow;
-  const title = openingQuiz ? 'Find your standing.' : t.assessment.title;
-  const detail = openingQuiz
-    ? 'Ten short pressure scenarios measure your strengths, weaknesses, and how vulnerable you are before training unlocks.'
-    : t.assessment.body;
-  if (error) return <section className="content assessment-view"><Header eyebrow={eyebrow} title="Your opening quiz could not load." detail={error} /><button className="primary action-button" onClick={onRetry}>Retry quiz <b>→</b></button></section>;
-  if (loading || !scenario) return <section className="content assessment-view"><Header eyebrow={eyebrow} title="Preparing your opening quiz..." detail="Loading the baseline scenarios that set your awareness standing." /></section>;
+  const eyebrow = openingQuiz ? t.assessment.openingEyebrow : t.assessment.eyebrow;
+  const title = openingQuiz ? t.assessment.openingTitle : t.assessment.title;
+  const detail = openingQuiz ? t.assessment.openingBody : t.assessment.body;
+  if (error) return <section className="content assessment-view"><Header eyebrow={eyebrow} title={t.assessment.loadError} detail={error} /><button type="button" className="primary action-button" onClick={onRetry}>{t.assessment.retry} <b>→</b></button></section>;
+  if (loading || !scenario) return <section className="content assessment-view"><Header eyebrow={eyebrow} title={t.assessment.loading} detail={t.assessment.loadingDetail} /></section>;
   const content = scenario.content[language] ?? scenario.content.en ?? Object.values(scenario.content)[0];
   const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
-  return <section className="content assessment-view"><Header eyebrow={eyebrow} title={title} detail={detail} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total || 10}</span><div><i style={{ width: `${((index + 1) / Math.max(total, 1)) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button key={option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button className="primary action-button" disabled={selectedOptionKey === null || saving} onClick={onSubmit}>{saving ? 'Calculating your standing...' : index === total - 1 ? 'See my standing' : t.assessment.continue} <b>→</b></button></article></section>;
+  const progressMax = Math.max(total, 1);
+  return <section className="content assessment-view"><Header eyebrow={eyebrow} title={title} detail={detail} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total || 10}</span><div role="progressbar" aria-valuemin={0} aria-valuemax={progressMax} aria-valuenow={index + 1} aria-label={`${t.common.question} ${index + 1} ${t.common.of} ${progressMax}`}><i style={{ width: `${((index + 1) / progressMax) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button type="button" key={option.optionKey} aria-pressed={selectedOptionKey === option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button type="button" className="primary action-button" disabled={selectedOptionKey === null || saving} onClick={onSubmit}>{saving ? t.assessment.saving : index === total - 1 ? t.assessment.seeStanding : t.assessment.continue} <b>→</b></button></article></section>;
 }
 
 function RiskProfileView({ profile, onRetake, onPracticeFocus, onContinue }: { profile: RiskProfile; onRetake: () => void; onPracticeFocus?: () => void; onContinue?: () => void }) {
@@ -869,12 +914,12 @@ function RiskProfileView({ profile, onRetake, onPracticeFocus, onContinue }: { p
   </section>;
 }
 
-function ProgressView({ summary, riskProfile, onTraining, onOpenRecommended }: { summary: TrainingSummary; riskProfile: RiskProfile | null; onTraining: () => void; onOpenRecommended: () => void }) {
+function ProgressView({ language, summary, riskProfile, onTraining, onOpenRecommended }: { language: Language; summary: TrainingSummary; riskProfile: RiskProfile | null; onTraining: () => void; onOpenRecommended: () => void }) {
   const available = summary.modules.reduce((total, module) => total + module.scenarioCount, 0);
   const completed = summary.modules.filter((module) => module.completed).length;
   const accuracy = summary.attempted ? Math.round((summary.correct / summary.attempted) * 100) : 0;
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
-  const recommendedTitle = summary.recommendation?.title.en ?? summary.recommendation?.slug;
+  const recommendedTitle = summary.recommendation?.title[language] ?? summary.recommendation?.title.en ?? summary.recommendation?.slug;
   return <section className="content">
     <Header eyebrow="PERSONAL SECURITY / LEARNING" title="Progress" detail="Track practice across published training modules and see where to continue." />
     {standing && riskProfile && <div className={`standing-banner level-${standing.level} progress-standing`}>
@@ -892,7 +937,7 @@ function ProgressView({ summary, riskProfile, onTraining, onOpenRecommended }: {
     {recommendedTitle && <article className="progress-recommendation"><div><p className="card-kicker">RECOMMENDED NEXT</p><h2>{recommendedTitle}</h2><p>Continue where the opening quiz and your recent practice say you will improve fastest.</p></div><button className="primary action-button" type="button" onClick={onOpenRecommended}>Open recommended module <b>→</b></button></article>}
     {summary.lastAttemptAt && <p className="progress-last-attempt">Last practice: {new Date(summary.lastAttemptAt).toLocaleString()}</p>}
     <article className="progress-modules"><div className="section-heading"><div><p className="card-kicker">MODULE BREAKDOWN</p><h2>Practice over time</h2></div><button className="text-button" type="button" onClick={onTraining}>Continue training <b>&#8594;</b></button></div>
-      {summary.modules.length ? <div className="progress-module-list">{summary.modules.map((module) => { const percent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosAttempted / module.scenarioCount) * 100)) : 0; return <div className="progress-module" key={module.id}><div className="progress-module-heading"><strong>{module.title.en ?? module.slug}</strong><span>{module.completed ? 'Complete' : `${module.scenariosAttempted} of ${module.scenarioCount} practiced`}</span></div><div className="progress-track"><i style={{ width: `${percent}%` }} /></div><small>{module.scenariosCorrect} correct responses</small></div>; })}</div> : <p>No published training modules are available yet.</p>}
+      {summary.modules.length ? <div className="progress-module-list">{summary.modules.map((module) => { const percent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosAttempted / module.scenarioCount) * 100)) : 0; const title = module.title[language] ?? module.title.en ?? module.slug; return <div className="progress-module" key={module.id}><div className="progress-module-heading"><strong>{title}</strong><span>{module.completed ? 'Complete' : `${module.scenariosAttempted} of ${module.scenarioCount} practiced`}</span></div><div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={module.scenarioCount} aria-valuenow={module.scenariosAttempted} aria-label={`${title} progress`}><i style={{ width: `${percent}%` }} /></div><small>{module.scenariosCorrect} correct responses</small></div>; })}</div> : <p>No published training modules are available yet.</p>}
     </article>
   </section>;
 }
@@ -1079,10 +1124,10 @@ function CertificationAssessmentView({ accessToken, language, assessment, onComp
   const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
   const minutes = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
   const seconds = (secondsLeft % 60).toString().padStart(2, '0');
-  return <article className="question-card certification-assessment"><p className="card-kicker">FINAL CERTIFICATION ASSESSMENT</p><div className="assessment-progress"><span>Question {index + 1} of {assessment.questions.length}</span><strong>Time left {minutes}:{seconds}</strong><div><i style={{ width: `${((index + 1) / assessment.questions.length) * 100}%` }} /></div></div><p className="lede">Pass mark {assessment.passPercent}% · {assessment.timeLimitMinutes} minutes</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{question.options.map((option) => <button key={option.optionKey} className={selected === option.optionKey ? 'option selected' : 'option'} onClick={() => setSelected(option.optionKey)} disabled={submitting || secondsLeft === 0}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div>{error && <p className="page-error" role="alert">{error}</p>}<button className="primary action-button" disabled={!selected || submitting || secondsLeft === 0} onClick={() => void submit()}>{submitting ? 'Submitting...' : index === assessment.questions.length - 1 ? 'Finish assessment' : 'Next question'} <b>&#8594;</b></button></article>;
+  return <article className="question-card certification-assessment"><p className="card-kicker">FINAL CERTIFICATION ASSESSMENT</p><div className="assessment-progress"><span>Question {index + 1} of {assessment.questions.length}</span><strong>Time left {minutes}:{seconds}</strong><div role="progressbar" aria-valuemin={0} aria-valuemax={assessment.questions.length} aria-valuenow={index + 1} aria-label={`Question ${index + 1} of ${assessment.questions.length}`}><i style={{ width: `${((index + 1) / assessment.questions.length) * 100}%` }} /></div></div><p className="lede">Pass mark {assessment.passPercent}% · {assessment.timeLimitMinutes} minutes</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{question.options.map((option) => <button type="button" key={option.optionKey} aria-pressed={selected === option.optionKey} className={selected === option.optionKey ? 'option selected' : 'option'} onClick={() => setSelected(option.optionKey)} disabled={submitting || secondsLeft === 0}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div>{error && <p className="page-error" role="alert">{error}</p>}<button type="button" className="primary action-button" disabled={!selected || submitting || secondsLeft === 0} onClick={() => void submit()}>{submitting ? 'Submitting...' : index === assessment.questions.length - 1 ? 'Finish assessment' : 'Next question'} <b>&#8594;</b></button></article>;
 }
 
-function CertificateVerificationPage({ verificationId }: { verificationId: string }) {
+function CertificateVerificationPage({ verificationId, language }: { verificationId: string; language: Language }) {
   const [certificate, setCertificate] = useState<VerifiedCertificate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1091,8 +1136,8 @@ function CertificateVerificationPage({ verificationId }: { verificationId: strin
   }, [verificationId]);
   if (loading) return <main className="certificate-verification"><p>Checking certificate...</p></main>;
   if (error || !certificate) return <main className="certificate-verification"><article className="certificate-paper"><p className="card-kicker">MARICS / VERIFICATION</p><h1>Certificate not verified</h1><p>{error ?? 'No certificate matches this verification ID.'}</p><a href="/">Return to MARICS</a></article></main>;
-  const moduleTitle = certificate.module?.title.en ?? certificate.module?.slug ?? 'Security awareness training';
-  return <main className="certificate-verification"><article className="certificate-paper"><div className="certificate-mark">M</div><p className="card-kicker">MARICS / VERIFIED RECORD</p><h1>Certificate of completion</h1><p>This confirms that</p><strong className="verified-recipient">{certificate.recipient}</strong><p>completed the security awareness module</p><h2>{moduleTitle}</h2><p className="verified-date">Issued {new Date(certificate.issuedAt).toLocaleDateString()}</p><p className="verified-id">Verification ID: {certificate.verificationId}</p><button className="primary action-button no-print" onClick={() => window.print()}>Print certificate <b>&#8595;</b></button></article></main>;
+  const moduleTitle = certificate.module?.title[language] ?? certificate.module?.title.en ?? certificate.module?.slug ?? 'Security awareness training';
+  return <main className="certificate-verification"><article className="certificate-paper"><div className="certificate-mark">M</div><p className="card-kicker">MARICS / VERIFIED RECORD</p><h1>Certificate of completion</h1><p>This confirms that</p><strong className="verified-recipient">{certificate.recipient}</strong><p>completed the security awareness module</p><h2>{moduleTitle}</h2><p className="verified-date">Issued {new Date(certificate.issuedAt).toLocaleDateString()}</p><p className="verified-id">Verification ID: {certificate.verificationId}</p><button type="button" className="primary action-button no-print" onClick={() => window.print()}>Print certificate <b>&#8595;</b></button></article></main>;
 }
 
 function roleLabel(role: AppRole) {
@@ -1394,6 +1439,7 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
   const scenarioPercent = progress?.scenarioCount ? Math.min(100, Math.round((progress.scenariosAttempted / progress.scenarioCount) * 100)) : 0;
   const manualsComplete = Boolean(progress?.completed);
   const isAiScenario = Boolean(activeScenario?.source === 'ai' || selectedScenarioSlug?.startsWith('ai-practice-'));
+  const trainingCopy = getTranslations(language).training;
   const optionText = (key: TrainingOptionKey) => {
     const values = activeScenario?.options.find((option) => option.option_key === key)?.content ?? {};
     return values[language] ?? values.en ?? Object.values(values)[0] ?? '';
@@ -1401,8 +1447,10 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
   const content = activeScenario?.content[language] ?? activeScenario?.content.en ?? (activeScenario ? Object.values(activeScenario.content)[0] : undefined);
   const optionKeys: TrainingOptionKey[] = ['A', 'B', 'C', 'D'];
   const [inspectState, setInspectState] = useState({ slug: selectedScenarioSlug, complete: false });
-  if (inspectState.slug !== selectedScenarioSlug) setInspectState({ slug: selectedScenarioSlug, complete: false });
-  const inspected = inspectState.complete;
+  useEffect(() => {
+    setInspectState({ slug: selectedScenarioSlug, complete: false });
+  }, [selectedScenarioSlug]);
+  const inspected = inspectState.slug === selectedScenarioSlug && inspectState.complete;
   const setInspected = useCallback((complete: boolean) => {
     setInspectState((current) => current.slug === selectedScenarioSlug && current.complete === complete ? current : { slug: selectedScenarioSlug, complete });
   }, [selectedScenarioSlug]);
@@ -1471,9 +1519,9 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
       {!loading && !error && selectedModule.scenarioSlugs.length === 0 && <p className="training-material-empty">Scenarios for this module are being prepared.</p>}
       {activeScenario && content && <article className="scenario-card training-quiz">
         <div className="scenario-meta">{isAiScenario && <span>AI practice</span>}{activeScenario.riskDimensions.map((dimension) => <span key={dimension}>{dimension}</span>)}</div>
-        <ScenarioInspector key={selectedScenarioSlug ?? activeScenario.slug} content={content as ScenarioContent} onInspected={setInspected} />
-        <h2>What should you do?</h2>
-        {!inspected && !result && <p className="inspect-hint">Inspect the sender, link, attachment, or conversation first, then choose what you would do.</p>}
+        <ScenarioInspector key={selectedScenarioSlug ?? activeScenario.slug} content={content as ScenarioContent} onInspected={setInspected} language={language} />
+        <h2>{trainingCopy.whatShouldYouDo}</h2>
+        {!inspected && !result && <p className="inspect-hint">{trainingCopy.inspectFirst}</p>}
         <div className="training-options">{optionKeys.map((key) => <button key={key} type="button" aria-pressed={answer === key} disabled={Boolean(result) || submitting || !inspected} className={answer === key ? 'selected' : ''} onClick={() => onAnswer(key)}><b>{key}</b>{optionText(key)}</button>)}</div>
         <button className="primary action-button" type="button" disabled={!inspected || !answer || submitting || Boolean(result)} onClick={onSubmit}>{submitting ? 'Saving answer...' : 'Save answer'} <b>&#8594;</b></button>
         {result && <div className={`feedback ${result.isCorrect ? 'good' : 'bad'}`} role="status">
@@ -1556,16 +1604,17 @@ function PasswordRecoveryScreen({ onDone }: { onDone: () => void }) {
   return <main className="auth-shell"><section className="auth-panel"><p className="eyebrow">MARICS Security</p><h1>Choose a new password.</h1><p className="lede">You opened a password reset link. Set a new password to continue into your workspace.</p><form onSubmit={submit}><label>New password<input type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label>Confirm password<input type="password" minLength={8} value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></label><button className="primary auth-submit" disabled={busy}>{busy ? 'Saving...' : 'Update password'} <b>&#8594;</b></button>{message && <p className="auth-message" role="alert">{message}</p>}</form></section></main>;
 }
 
-function HelpCentre() {
-  return <section className="content"><Header eyebrow="Help / workspace" title="Help centre" detail="Short answers for signing in, the opening quiz, training, and organization access." /><article className="help-article">
-    <h2>Sign-in and verification</h2>
-    <p>New accounts must verify email before they can sign in. Open the message from MARICS, then return here. Organization signup does not make you an administrator until you create a workspace.</p>
-    <h2>Opening quiz and standing</h2>
-    <p>Before training unlocks, you take a short opening quiz. It sets your awareness score and standing level (Critical through Resilient), marks strengths and weaknesses by topic, and recommends a focus area. You can retake the quiz later from Assessment.</p>
-    <h2>Training</h2>
-    <p>Complete the manually written scenarios in a module first. When they are done, MARICS can generate additional Claude AI practice scenarios for that module. Both manual and AI answers update your progress, history, and Human Risk Profile. Certificates unlock after every published module’s manual scenarios are complete and you pass the 30-question assessment.</p>
-    <h2>Organizations</h2>
-    <p>Invite employees with a one-time link. Administrators see aggregate team risk only. Individual answers stay private. Sidebar labels show your organization name plus “account” when you belong to a workspace.</p>
+function HelpCentre({ language }: { language: Language }) {
+  const t = getTranslations(language).help;
+  return <section className="content"><Header eyebrow={t.eyebrow} title={t.title} detail={t.detail} /><article className="help-article">
+    <h2>{t.signinTitle}</h2>
+    <p>{t.signinBody}</p>
+    <h2>{t.quizTitle}</h2>
+    <p>{t.quizBody}</p>
+    <h2>{t.trainingTitle}</h2>
+    <p>{t.trainingBody}</p>
+    <h2>{t.orgTitle}</h2>
+    <p>{t.orgBody}</p>
   </article></section>;
 }
 

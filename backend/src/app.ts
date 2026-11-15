@@ -70,6 +70,10 @@ export function buildApp() {
     .flatMap((origins) => origins.split(','))
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction && configuredOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS_REQUIRED: Set FRONTEND_URL or ALLOWED_ORIGINS before starting the API in production.');
+  }
   const productionOrigins = configuredOrigins.length ? configuredOrigins : ['http://localhost:5173'];
 
   const normalizeOriginPattern = (pattern: string) => pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
@@ -84,7 +88,7 @@ export function buildApp() {
 
   app.register(helmet);
   app.register(cors, {
-    origin: process.env.NODE_ENV === 'production'
+    origin: isProduction
       ? (origin, callback) => {
           if (!origin || isAllowedOrigin(origin, productionOrigins)) {
             callback(null, true);
@@ -847,7 +851,7 @@ export function buildApp() {
     }
   });
 
-  app.get('/api/certificates/verify/:verificationId', async (request, reply) => {
+  app.get('/api/certificates/verify/:verificationId', { config: { rateLimit: { max: 40, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       const verificationId = z.string().uuid().parse((request.params as { verificationId: string }).verificationId);
       const certificate = await verifyCertificate(verificationId);

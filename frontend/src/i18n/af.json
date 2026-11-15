@@ -40,7 +40,7 @@
     "demoNetworkError": "Ons kon nie die MARICS-API bereik nie. Bevestig dat die agterkant hardloop en probeer weer."
   },
   "auth": { "eyebrow": "Menslike risiko-intelligensieplatform", "welcome": "Welkom terug.", "build": "Bou veiliger gewoontes.", "reset": "Herstel jou wagwoord.", "body": "Jou privaat werkspasie om besluite te oefen wat aanvallers probeer verhaas.", "name": "Naam", "country": "Land of streek", "language": "Voorkeurtaal", "accountType": "Rekeningtipe", "individual": "Individu", "organization": "Organisasie-administrateur", "email": "E-pos", "password": "Wagwoord", "signIn": "Teken in", "create": "Skep rekening", "sendReset": "Stuur herstelskakel", "signupPrompt": "Het jy 'n rekening nodig? Registreer", "signinPrompt": "Reeds geregistreer? Teken in", "forgot": "Wagwoord vergeet?", "verify": "Kyk jou e-pos om jou rekening te verifieer, en teken dan in.", "resetSent": "As daardie e-pos geregistreer is, is 'n herstelskakel gestuur.", "error": "Ons kon nie daardie versoek voltooi nie. Kontroleer jou besonderhede en probeer weer." },
-  "assessment": { "eyebrow": "Inleiding / assessering", "title": "Hoe reageer jy onder druk?", "body": "Tien kort situasies help ons om die oomblikke te verstaan wat jou aandag nodig het. Daar is geen perfekte telling nie.", "continue": "Gaan voort", "finish": "Sien my profiel", "manipulation": "manipulasie", "questions": [
+  "assessment": { "eyebrow": "Inleiding / assessering", "title": "Hoe reageer jy onder druk?", "body": "Tien kort situasies help ons om die oomblikke te verstaan wat jou aandag nodig het. Daar is geen perfekte telling nie.", "continue": "Gaan voort", "finish": "Sien my profiel", "manipulation": "manipulasie", "openingEyebrow": "OPENINGSSEKURITEITSQUIZ", "openingTitle": "Vind jou staanplek.", "openingBody": "Tien kort drukscenario's meet jou sterkpunte, swakpunte en hoe kwesbaar jy is voordat opleiding oopsluit.", "loadError": "Jou openingsquiz kon nie laai nie.", "loading": "Jou openingsquiz word voorberei...", "loadingDetail": "Die basislynscenario's wat jou bewustheid bepaal, word gelaai.", "saving": "Jou staanplek word bereken...", "seeStanding": "Sien my staanplek", "retry": "Probeer quiz weer", "questions": [
     { "dimension": "Dringendheid", "prompt": "Jou bank stuur 'n boodskap: Verdachte aktiwiteit. Bevestig binne 10 minute. Wat doen jy?", "options": ["Maak die skakel oop voordat die rekening gesluit word.", "Maak jou banktoep direk oop of bel die nommer op jou kaart.", "Antwoord STOP en wag vir nog 'n boodskap."] },
     { "dimension": "Gesag", "prompt": "'n Senior kollega vra per e-pos vir 'n dringende betalingsverandering. Wat is die veiligste?", "options": ["Betaal omdat die versoek van 'n senior persoon kom.", "Antwoord die e-pos en vra vir bevestiging.", "Bevestig dit met 'n bekende telefoonnommer of ander betroubare kanaal."] },
     { "dimension": "Nuuskierigheid", "prompt": "'n Koerierboodskap bevat 'n klein fooi en 'n verkorte skakel. Wat is die veiligste?", "options": ["Gebruik die koerier se amptelike webwerf of toep.", "Klik maar moenie kaartbesonderhede invoer nie.", "Stuur dit aan 'n vriend om te vra of dit eg lyk."] },
@@ -52,5 +52,57 @@
     { "dimension": "Bewysstolery", "prompt": "'n Aanmeldbladsy vra jou wagwoord weer nadat jy van 'n onverwagte boodskap af gekom het. Wat is die veiligste?", "options": ["Voer dit in as die logo reg lyk.", "Gaan direk na die diens en meld daar aan.", "Gebruik dieselfde wagwoord slegs een keer."] },
     { "dimension": "Impersonasie", "prompt": "'n Boodskap lyk of dit van jou bestuurder kom en vra vir vertroulike personeeldata. Wat doen jy?", "options": ["Stuur dit omdat die versoek intern is.", "Antwoord en vra waarom hulle dit nodig het.", "Bevestig die versoek via 'n betroubare kanaal en volg data-deelbeleid."] }
   ] },
-  "common": { "question": "Vraag", "of": "van" }
+  "common": { "question": "Vraag", "of": "van" },
+  "help": {
+    "eyebrow": "Hulp / werkspasie",
+    "title": "Hulpsentrum",
+    "detail": "Kort antwoorde oor aanmelding, die openingsquiz, opleiding en organisasietoegang.",
+    "signinTitle": "Aanmelding en verifikasie",
+    "signinBody": "Nuwe rekeninge moet eers e-pos verifieer voordat hulle kan aanmeld. Open die boodskap van MARICS en kom dan terug. Organisasie-registrasie maak jou nie administrateur totdat jy 'n werkspasie skep nie.",
+    "quizTitle": "Openingsquiz en staanplek",
+    "quizBody": "Voordat opleiding oopsluit, doen jy 'n kort openingsquiz. Dit stel jou bewustheidtelling en staanplekvlak (Kritiek tot Veerkragtig), merk sterkpunte en swakpunte per onderwerp, en beveel 'n fokusarea aan. Jy kan die quiz later weer doen vanaf Assessering.",
+    "trainingTitle": "Opleiding",
+    "trainingBody": "Voltooi eers die handgeskrewe scenario's in 'n module. Daarna kan MARICS bykomende Claude KI-oefenscenario's vir daardie module skep. Beide handmatige en KI-antwoorde werk jou vordering, geskiedenis en Menslike Risikoprofiel by. Sertifikate ontgrendel nadat elke gepubliseerde module se handmatige scenario's voltooi is en jy die sertifiseringsassessering slaag.",
+    "orgTitle": "Organisasies",
+    "orgBody": "Nooi werknemers met 'n eenmalige e-posskakel. Administrateurs sien slegs saamgestelde spanrisiko. Individuele antwoorde bly privaat. Sydbalk-etikette wys jou organisasienaam plus “rekening” wanneer jy aan 'n werkspasie behoort."
+  },
+  "training": {
+    "whatShouldYouDo": "Wat moet jy doen?",
+    "inspectFirst": "Inspekteer eers die sender, skakel, aanhegsel of gesprek, en kies dan wat jy sou doen."
+  },
+  "inspect": {
+    "partsInspected": "{seen} van {total} dele geïnspekteer",
+    "emailPreview": "Inkassie-voorskou",
+    "tabMessage": "Boodskap",
+    "tabSender": "Sender",
+    "tabLink": "Skakel",
+    "tabAttachment": "Aanhegsel",
+    "tabQr": "QR-kode",
+    "emailTabsLabel": "Inspekteer hierdie e-pos",
+    "emailSenderHint": "Kontroleer of die adres by die organisasie se bekende domein pas, nie net die vertoonnaam nie.",
+    "emailLinkSafe": "Hierdie bestemming pas by 'n bekende amptelike kanaal.",
+    "emailLinkUnsafe": "Die sigbare teks en die werklike bestemming stem nie ooreen nie. Om 'n skakel te bekyk voor jy klik, is 'n kern e-posgewoonte.",
+    "emailQrHint": "QR-kodes kan 'n nagemaakte aanmeldblad versteek. Open die diens vanaf 'n bekende boekmerk.",
+    "smsTapSender": "Tik om die sendernommer te kontroleer",
+    "smsFlagCheck": "Keerpunt nagegaan",
+    "smsFlagTap": "Tik om die keerpunt te inspekteer",
+    "smsHintFlagged": "Kontroleer die sendernommer, en tik dan die gemerkte boodskap. Druk, 'n skakel of 'n versoek om kodes is gewoonlik die keerpunt.",
+    "smsHintSender": "Tik die senderkop om die nommer te bevestig voordat jy 'n antwoord kies.",
+    "waVerified": "geverifieer",
+    "waUnverified": "ongeverifieerde nommer",
+    "waReplyPrompt": "Hoe antwoord jy? Volg die gesprek tot die einde voordat jy jou werklike respons kies.",
+    "waEndHint": "Jy het die einde van hierdie pad bereik. Die swendelaar pas by wat jy sê — onafhanklike verifikasie is die veiliger uitgang.",
+    "waContinueHint": "Gaan voort met die gesprek, en besluit dan wat jy sou doen.",
+    "waRestart": "Herbegin gesprek",
+    "callIncoming": "Inkomende oproep",
+    "callClaims": "beweer om",
+    "callHint": "Beller-ID kan vervals word. Beëindig die oproep en gebruik 'n nommer van die agterkant van jou kaart, die amptelike toepassing of 'n bekende interne gids.",
+    "jobTabsLabel": "Inspekteer hierdie werksgeleentheid",
+    "jobAdvert": "Werkadvertensie",
+    "jobRecruiter": "Werwerprofiel",
+    "jobOffer": "Aanbodbrief",
+    "paymentOnFile": "Op lêer",
+    "paymentRequested": "Versoekte verandering",
+    "paymentHint": "Veranderde verskafferbankbesonderhede moet met 'n bekende kontak op lêer bevestig word, nooit met die kontakbesonderhede in die veranderingsversoek nie."
+  }
 }

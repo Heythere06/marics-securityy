@@ -4,6 +4,25 @@ async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   return response;
 }
 
+function mergeAbortSignals(userSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!userSignal) return timeout;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([userSignal, timeout]);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (userSignal.aborted || timeout.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  userSignal.addEventListener('abort', abort, { once: true });
+  timeout.addEventListener('abort', abort, { once: true });
+  return controller.signal;
+}
+
+export function isAbortError(error: unknown) {
+  return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError';
+}
+
 export class ApiError extends Error {
   code: string;
   details?: Record<string, unknown>;
@@ -256,8 +275,8 @@ export async function generateScenario(accessToken: string, input: { moduleSlug:
   return payload.scenario;
 }
 
-export async function getScenarioWhy(accessToken: string, input: { language: 'en' | 'af' | 'pt'; question: { moduleTitle: string; scenarioTitle: string; scenarioPrompt: string; options: Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>; selectedOptionKey: 'A' | 'B' | 'C' | 'D'; correctOptionKey: 'A' | 'B' | 'C' | 'D'; selectedAnswer: string; correctAnswer: string; isCorrect: boolean; riskDimensions: string[]; existingExplanation: string; userQuestion: string } }) {
-  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/scenario-why`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: AbortSignal.timeout(25_000) });
+export async function getScenarioWhy(accessToken: string, input: { language: 'en' | 'af' | 'pt'; question: { moduleTitle: string; scenarioTitle: string; scenarioPrompt: string; options: Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>; selectedOptionKey: 'A' | 'B' | 'C' | 'D'; correctOptionKey: 'A' | 'B' | 'C' | 'D'; selectedAnswer: string; correctAnswer: string; isCorrect: boolean; riskDimensions: string[]; existingExplanation: string; userQuestion: string } }, signal?: AbortSignal) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/scenario-why`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: mergeAbortSignals(signal, 25_000) });
   const payload = await response.json().catch(() => ({})) as { explanation?: string; message?: string };
   if (!response.ok || !payload.explanation) throw new Error(payload.message ?? 'A focused explanation could not be generated');
   return payload.explanation;
@@ -376,12 +395,12 @@ export async function listAiPracticeScenarios(accessToken: string, moduleSlug: s
   return (await response.json()).scenarios as AiPracticeScenarioSummary[];
 }
 
-export async function generateAiPracticeScenario(accessToken: string, moduleSlug: string, language: 'en' | 'af' | 'pt', difficulty: 'foundation' | 'intermediate' | 'advanced' = 'intermediate') {
+export async function generateAiPracticeScenario(accessToken: string, moduleSlug: string, language: 'en' | 'af' | 'pt', difficulty: 'foundation' | 'intermediate' | 'advanced' = 'intermediate', signal?: AbortSignal) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules/${moduleSlug}/ai-practice`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ language, difficulty }),
-    signal: AbortSignal.timeout(45_000),
+    signal: mergeAbortSignals(signal, 45_000),
   });
   const payload = await response.json().catch(() => ({})) as { scenario?: TrainingScenario; message?: string };
   if (!response.ok || !payload.scenario) throw new Error(payload.message ?? 'AI practice scenario could not be generated');

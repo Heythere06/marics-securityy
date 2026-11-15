@@ -48,6 +48,38 @@
 | FE-031 hardcode 80%/30Q | **Fixed** — bind `gate` / assessment `passPercent` + `timeLimitMinutes` |
 | BE-036 already submitted | **Fixed** — maps to HTTP 409 |
 
+### Batch 5 status (Training honesty) — landed in repo
+
+| ID | Status |
+|----|--------|
+| FE-023 inspect reset during render | **Fixed** — reset via `useEffect` on slug |
+| FE-024 SMS inspect on mount | **Fixed** — require sender + flagged interaction |
+| FE-025 WhatsApp one-step unlock | **Fixed** — unlock only at conversation `end` |
+| FE-027 next wraps into AI | **Fixed** — separate manual / AI next queues |
+| FE-028 AI stale on navigate | **Fixed** — AbortController on scenario change / leave training |
+
+### Batch 6 status (i18n / mobile / a11y) — landed in repo
+
+| ID | Status |
+|----|--------|
+| FE-019 opening quiz chrome | **Fixed** — `assessment.opening*` i18n keys |
+| FE-026 inspector hints | **Fixed** — `inspect` strings + `language` prop |
+| FE-033 cert verify title | **Fixed** — locale-aware module title |
+| FE-035 progress titles | **Fixed** — `title[language]` |
+| FE-046 mobile sign-out | **Fixed** — keep `.side-bottom` visible |
+| FE-047 profile name zeroed | **Fixed** — abbreviated name stays readable |
+| FE-048 reduced-motion | **Fixed** — smooth scroll only if `no-preference` |
+| FE-049 / FE-022 a11y | **Fixed** — progressbar roles + option `type`/`aria-pressed` |
+| FE-057 HelpCentre | **Fixed** — localized help copy |
+
+### Batch 7 status (Ops / hosting) — landed in repo
+
+| ID | Status |
+|----|--------|
+| FE-005 `/verify/*` SPA 404 | **Fixed** — Vercel rewrites to `index.html` |
+| BE-025 prod CORS localhost default | **Fixed** — `CORS_ORIGINS_REQUIRED` fail-fast |
+| BE-039 cert verify rate limit | **Fixed** — 40 requests / hour on public verify |
+
 ### Severity key
 
 | Level | Meaning |

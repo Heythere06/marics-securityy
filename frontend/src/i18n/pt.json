@@ -40,7 +40,7 @@
     "demoNetworkError": "Não foi possível contactar a API MARICS. Confirme que o backend está a correr e tente novamente."
   },
   "auth": { "eyebrow": "Plataforma de inteligência de risco humano", "welcome": "Bem-vindo de volta.", "build": "Crie hábitos mais seguros.", "reset": "Redefina a sua palavra-passe.", "body": "O seu espaço privado para praticar decisões que os atacantes tentam apressar.", "name": "Nome", "country": "País ou região", "language": "Idioma preferido", "accountType": "Tipo de conta", "individual": "Individual", "organization": "Administrador de organização", "email": "E-mail", "password": "Palavra-passe", "signIn": "Entrar", "create": "Criar conta", "sendReset": "Enviar ligação de redefinição", "signupPrompt": "Precisa de uma conta? Criar conta", "signinPrompt": "Já está registado? Entrar", "forgot": "Esqueceu a palavra-passe?", "verify": "Verifique o seu e-mail e depois entre.", "resetSent": "Se esse e-mail estiver registado, receberá uma ligação de redefinição.", "error": "Não foi possível concluir o pedido. Verifique os seus dados e tente novamente." },
-  "assessment": { "eyebrow": "Integração / avaliação", "title": "Como reage sob pressão?", "body": "Dez situações curtas ajudam-nos a compreender os momentos que precisam da sua atenção. Não existe uma pontuação perfeita.", "continue": "Continuar", "finish": "Ver o meu perfil", "manipulation": "manipulação", "questions": [
+  "assessment": { "eyebrow": "Integração / avaliação", "title": "Como reage sob pressão?", "body": "Dez situações curtas ajudam-nos a compreender os momentos que precisam da sua atenção. Não existe uma pontuação perfeita.", "continue": "Continuar", "finish": "Ver o meu perfil", "manipulation": "manipulação", "openingEyebrow": "QUESTIONÁRIO INICIAL DE SEGURANÇA", "openingTitle": "Descubra a sua posição.", "openingBody": "Dez cenários curtos de pressão medem os seus pontos fortes, fracos e o quão vulnerável está antes de o treino ser desbloqueado.", "loadError": "O questionário inicial não pôde ser carregado.", "loading": "A preparar o questionário inicial...", "loadingDetail": "A carregar os cenários de base que definem a sua consciência.", "saving": "A calcular a sua posição...", "seeStanding": "Ver a minha posição", "retry": "Repetir questionário", "questions": [
     { "dimension": "Urgência", "prompt": "O seu banco envia: Atividade suspeita. Confirme em 10 minutos. O que faz?", "options": ["Abrir a ligação antes de a conta ser bloqueada.", "Abrir diretamente a aplicação do banco ou ligar para o número do cartão.", "Responder STOP e esperar outra mensagem."] },
     { "dimension": "Autoridade", "prompt": "Um colega sénior pede por e-mail uma alteração urgente de pagamento. O que é mais seguro?", "options": ["Pagar porque o pedido vem de alguém sénior.", "Responder ao e-mail a pedir confirmação.", "Confirmar através de um número conhecido ou outro canal confiável."] },
     { "dimension": "Curiosidade", "prompt": "Uma mensagem de entrega inclui uma pequena taxa e uma ligação encurtada. O que faz?", "options": ["Usar o site ou aplicação oficial da transportadora.", "Clicar mas não inserir os dados do cartão.", "Enviar a mensagem a um amigo para confirmar."] },
@@ -52,5 +52,57 @@
     { "dimension": "Roubo de credenciais", "prompt": "Uma página de início de sessão pede a palavra-passe de novo após uma mensagem inesperada. O que é mais seguro?", "options": ["Introduzir se o logótipo parecer correcto.", "Ir directamente ao serviço e iniciar sessão aí.", "Usar a mesma palavra-passe apenas uma vez."] },
     { "dimension": "Impersonação", "prompt": "Uma mensagem parece vir do seu gestor a pedir dados confidenciais de pessoal. O que faz?", "options": ["Enviar porque o pedido é interno.", "Responder e perguntar porque precisam.", "Confirmar o pedido por um canal confiável e seguir a política de partilha de dados."] }
   ] },
-  "common": { "question": "Pergunta", "of": "de" }
+  "common": { "question": "Pergunta", "of": "de" },
+  "help": {
+    "eyebrow": "Ajuda / espaço de trabalho",
+    "title": "Centro de ajuda",
+    "detail": "Respostas curtas sobre início de sessão, o questionário inicial, treino e acesso à organização.",
+    "signinTitle": "Início de sessão e verificação",
+    "signinBody": "Novas contas devem verificar o e-mail antes de poderem entrar. Abra a mensagem da MARICS e volte aqui. O registo de organização não o torna administrador até criar um espaço de trabalho.",
+    "quizTitle": "Questionário inicial e posição",
+    "quizBody": "Antes de o treino ser desbloqueado, faz um questionário curto. Define a sua pontuação de consciência e nível (Crítico a Resiliente), marca pontos fortes e fracos por tema e recomenda uma área de foco. Pode repetir o questionário mais tarde em Avaliação.",
+    "trainingTitle": "Treino",
+    "trainingBody": "Conclua primeiro os cenários escritos manualmente de um módulo. Depois, a MARICS pode gerar cenários adicionais de prática com Claude AI. Respostas manuais e de IA atualizam o progresso, histórico e Perfil de Risco Humano. Os certificados desbloqueiam depois de concluir os cenários manuais de cada módulo publicado e de passar a avaliação de certificação.",
+    "orgTitle": "Organizações",
+    "orgBody": "Convide colaboradores com uma ligação única por e-mail. Os administradores veem apenas o risco agregado da equipa. As respostas individuais permanecem privadas. Os rótulos da barra lateral mostram o nome da organização mais “conta” quando pertence a um espaço de trabalho."
+  },
+  "training": {
+    "whatShouldYouDo": "O que deve fazer?",
+    "inspectFirst": "Inspecione primeiro o remetente, a ligação, o anexo ou a conversa, e depois escolha o que faria."
+  },
+  "inspect": {
+    "partsInspected": "{seen} de {total} partes inspecionadas",
+    "emailPreview": "Pré-visualização da caixa de entrada",
+    "tabMessage": "Mensagem",
+    "tabSender": "Remetente",
+    "tabLink": "Ligação",
+    "tabAttachment": "Anexo",
+    "tabQr": "Código QR",
+    "emailTabsLabel": "Inspecionar este e-mail",
+    "emailSenderHint": "Verifique se o endereço corresponde ao domínio conhecido da organização, não apenas ao nome apresentado.",
+    "emailLinkSafe": "Este destino corresponde a um canal oficial conhecido.",
+    "emailLinkUnsafe": "O texto visível e o destino real não coincidem. Passar o rato sobre uma ligação antes de clicar é um hábito essencial de e-mail.",
+    "emailQrHint": "Códigos QR podem esconder uma página de início de sessão falsa. Abra o serviço a partir de um marcador conhecido.",
+    "smsTapSender": "Toque para verificar o número do remetente",
+    "smsFlagCheck": "Ponto de viragem verificado",
+    "smsFlagTap": "Toque para inspecionar o ponto de viragem",
+    "smsHintFlagged": "Verifique o número do remetente e depois toque na mensagem assinalada. Pressão, uma ligação ou um pedido de códigos costuma ser o ponto de viragem.",
+    "smsHintSender": "Toque no cabeçalho do remetente para confirmar o número antes de escolher uma resposta.",
+    "waVerified": "verificado",
+    "waUnverified": "número não verificado",
+    "waReplyPrompt": "Como responde? Siga a conversa até ao fim antes de escolher a sua resposta real.",
+    "waEndHint": "Chegou ao fim deste caminho. O fraudador adapta-se ao que disser — a verificação independente é a saída mais segura.",
+    "waContinueHint": "Continue a conversa e depois decida o que faria.",
+    "waRestart": "Reiniciar conversa",
+    "callIncoming": "Chamada recebida",
+    "callClaims": "afirma ser",
+    "callHint": "O ID do autor da chamada pode ser falsificado. Termine a chamada e use um número do verso do cartão, da aplicação oficial ou de um diretório interno conhecido.",
+    "jobTabsLabel": "Inspecionar esta oportunidade de emprego",
+    "jobAdvert": "Anúncio de emprego",
+    "jobRecruiter": "Perfil do recrutador",
+    "jobOffer": "Carta de oferta",
+    "paymentOnFile": "Em arquivo",
+    "paymentRequested": "Alteração pedida",
+    "paymentHint": "Dados bancários alterados de fornecedores devem ser verificados com um contacto conhecido já em arquivo, nunca com os contactos do pedido de alteração."
+  }
 }
