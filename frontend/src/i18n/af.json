@@ -64,7 +64,9 @@
     "trainingTitle": "Opleiding",
     "trainingBody": "Voltooi eers die handgeskrewe scenario's in 'n module. Daarna kan MARICS bykomende Claude KI-oefenscenario's vir daardie module skep. Beide handmatige en KI-antwoorde werk jou vordering, geskiedenis en Menslike Risikoprofiel by. Sertifikate ontgrendel nadat elke gepubliseerde module se handmatige scenario's voltooi is en jy die sertifiseringsassessering slaag.",
     "orgTitle": "Organisasies",
-    "orgBody": "Nooi werknemers met 'n eenmalige e-posskakel. Administrateurs sien slegs saamgestelde spanrisiko. Individuele antwoorde bly privaat. Sydbalk-etikette wys jou organisasienaam plus “rekening” wanneer jy aan 'n werkspasie behoort."
+    "orgBody": "Nooi werknemers met 'n eenmalige e-posskakel. Administrateurs sien slegs saamgestelde spanrisiko. Individuele antwoorde bly privaat. Sydbalk-etikette wys jou organisasienaam plus “rekening” wanneer jy aan 'n werkspasie behoort.",
+    "coachTitle": "KI-afrigter",
+    "coachBody": "Open KI-afrigter in die sydbalk om direk met die MARICS-assistent te praat. Vra oor 'n boodskap, oproep of gewoonte. Hierdie klets vervang nie Opleiding nie. Die gesprek bly in hierdie blaaier-oortjie en word uitgevee wanneer jy die werf verlaat."
   },
   "training": {
     "whatShouldYouDo": "Wat moet jy doen?",
@@ -104,5 +106,25 @@
     "paymentOnFile": "Op lêer",
     "paymentRequested": "Versoekte verandering",
     "paymentHint": "Veranderde verskafferbankbesonderhede moet met 'n bekende kontak op lêer bevestig word, nooit met die kontakbesonderhede in die veranderingsversoek nie."
+  },
+  "workspace": {
+    "language": "Taal",
+    "signOut": "Teken uit",
+    "help": "Hulpsentrum",
+    "nav": {
+      "overview": "Kontrolebord",
+      "users": "Gebruikers",
+      "organization": "Organisasie",
+      "modules": "Opleiding",
+      "reports": "Verslae",
+      "demo-requests": "Demoversoeke",
+      "audit": "Ouditlog",
+      "settings": "Instellings",
+      "assessment": "My risikoprofiel",
+      "training": "Opleiding",
+      "assistant": "KI-afrigter",
+      "progress": "Vordering",
+      "certificates": "Sertifikate"
+    }
   }
 }

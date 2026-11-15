@@ -9,8 +9,9 @@ import { ScenarioInspector, type ScenarioContent } from './ScenarioInspectors';
 import './styles.css';
 
 const AdminScenarioEditor = lazy(() => import('./AdminScenarioEditor').then(({ AdminScenarioEditor: Editor }) => ({ default: Editor })));
+const AssistantChat = lazy(() => import('./AssistantChat').then(({ AssistantChat: Chat }) => ({ default: Chat })));
 
-type View = 'overview' | 'assessment' | 'training' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings' | 'audit' | 'demo-requests' | 'help';
+type View = 'overview' | 'assessment' | 'training' | 'assistant' | 'organization' | 'certificates' | 'progress' | 'users' | 'modules' | 'ai-content' | 'reports' | 'settings' | 'audit' | 'demo-requests' | 'help';
 type AppRole = 'individual' | 'employee' | 'organization_admin' | 'marics_admin';
 type OrgMembership = { id: string; name: string; isAdmin: boolean; defaultEmployeeLanguage?: 'en' | 'af' | 'pt' };
 type TrainingOptionKey = 'A' | 'B' | 'C' | 'D';
@@ -60,6 +61,7 @@ function App() {
   const [assessmentSaving, setAssessmentSaving] = useState(false);
   const trainingAiAbortRef = useRef<AbortController | null>(null);
   const t = getTranslations(language);
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
 
   const abortTrainingAi = () => {
     trainingAiAbortRef.current?.abort();
@@ -133,12 +135,15 @@ function App() {
     };
     window.addEventListener('marics:unauthorized', onUnauthorized);
     window.addEventListener('marics:suspended', onSuspended);
+    const endSession = () => { void supabase?.auth.signOut({ scope: 'local' }); };
+    window.addEventListener('pagehide', endSession);
     return () => {
       active = false;
       window.clearTimeout(authTimeout);
       listener.subscription.unsubscribe();
       window.removeEventListener('marics:unauthorized', onUnauthorized);
       window.removeEventListener('marics:suspended', onSuspended);
+      window.removeEventListener('pagehide', endSession);
     };
   }, [authRetry]);
 
@@ -204,8 +209,7 @@ function App() {
         if (summary) setTrainingSummary(summary);
         if (savedRiskProfile) {
           setRiskProfile(savedRiskProfile);
-          if (profile?.account_type === 'organization' && nextRole === 'individual') setView('organization');
-          else setView('overview');
+          setView('overview');
           return;
         }
         if (nextRole !== 'marics_admin') {
@@ -320,14 +324,14 @@ function App() {
     setTrainingLoading(false);
   };
 
-  const generateMoreAiPractice = async () => {
+  const generateMoreAiPractice = async (prompt?: string) => {
     if (!session || !selectedTrainingModuleSlug) return;
     const moduleSlug = selectedTrainingModuleSlug;
     const controller = beginTrainingAiRequest();
     setAiPracticeGenerating(true);
     setTrainingError(null);
     try {
-      const scenario = await generateAiPracticeScenario(session.access_token, moduleSlug, language, 'intermediate', controller.signal);
+      const scenario = await generateAiPracticeScenario(session.access_token, moduleSlug, language, 'intermediate', prompt, controller.signal);
       if (controller.signal.aborted) return;
       await refreshAiPractice(moduleSlug);
       if (controller.signal.aborted) return;
@@ -494,7 +498,7 @@ function App() {
   if (!profileReady) return <div className="loading-screen">Preparing your workspace...</div>;
 
   return <main className="workspace">
-    <Sidebar role={role} accountType={accountType} displayName={displayName} organizationName={organizations.map((organization) => organization.name).filter(Boolean).join(' · ') || null} language={language} onLanguageChange={(nextLanguage) => { setLanguage(nextLanguage); if (session) updateLanguage(session.access_token, nextLanguage).catch(() => setSaveError('We could not save your language preference.')); }} view={view} setView={navigate} onboardingLocked={needsOnboarding} hasOrganizations={organizations.length > 0} onSignOut={() => supabase?.auth.signOut()} />
+    <Sidebar role={role} accountType={accountType} displayName={displayName} organizationName={[...new Set(organizations.map((organization) => organization.name).filter(Boolean))].join(' · ') || null} language={language} onLanguageChange={(nextLanguage) => { setLanguage(nextLanguage); if (session) updateLanguage(session.access_token, nextLanguage).catch(() => setSaveError('We could not save your language preference.')); }} view={view} setView={navigate} onboardingLocked={needsOnboarding} hasOrganizations={organizations.length > 0} onSignOut={() => supabase?.auth.signOut()} />
     {inviteNotice && <div className={`toast ${/could not|invalid|mismatch|expired/i.test(inviteNotice) ? 'error' : ''}`} role="status">{inviteNotice}<button className="text-button" onClick={() => setInviteNotice(null)}>Dismiss</button></div>}
     {needsOnboarding ? (
       <AssessmentView
@@ -525,10 +529,9 @@ function App() {
     ) : <>
       {view === 'overview' && role === 'marics_admin' && <PlatformAdminDashboard displayName={displayName} session={session} />}
       {view === 'overview' && role === 'employee' && <EmployeeDashboard displayName={displayName} organizations={organizations} riskProfile={riskProfile} trainingSummary={trainingSummary} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
-      {view === 'overview' && (role === 'organization_admin' || (accountType === 'organization' && organizations.length > 0 && role !== 'marics_admin' && role !== 'employee')) && <OrganizationDashboard session={session} organizations={organizations} />}
       {view === 'overview' && accountType === 'organization' && organizations.length === 0 && role !== 'marics_admin' && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} />}
-      {view === 'overview' && role === 'individual' && accountType !== 'organization' && <Overview displayName={displayName} onboardingComplete={onboardingComplete} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} />}
-      {role === 'marics_admin' && view !== 'overview' && view !== 'help' && <AdminSecondaryView view={view} session={session} />}
+      {view === 'overview' && canTrain && !(accountType === 'organization' && organizations.length === 0) && role !== 'employee' && <Overview displayName={displayName} onboardingComplete={onboardingComplete} riskProfile={riskProfile} trainingSummary={trainingSummary} trainingModules={trainingModules} onAssessment={() => navigate('assessment')} onTraining={() => navigate('training')} organizationName={organizations[0]?.name ?? null} onOrganization={role === 'organization_admin' || accountType === 'organization' ? () => navigate('organization') : undefined} />}
+      {role === 'marics_admin' && view !== 'overview' && view !== 'help' && view !== 'assistant' && <AdminSecondaryView view={view} session={session} />}
       {view === 'assessment' && canTrain && (riskProfile && !retakingAssessment ? <RiskProfileView profile={riskProfile} onRetake={() => void beginAssessment()} onPracticeFocus={() => {
         const recommended = trainingSummary.recommendation?.slug;
         if (recommended) void selectTrainingModule(recommended);
@@ -546,9 +549,10 @@ function App() {
           setTrainingError(error instanceof Error ? error.message : 'Training modules could not be loaded.');
           setTrainingLoading(false);
         });
-      }} onOpenCertificates={() => navigate('certificates')} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} streak={trainingStreak} submitting={trainingSubmitting} whyExplanation={whyExplanation} whyError={whyError} whyLoading={whyLoading} whyQuestionOpen={whyQuestionOpen} whyQuestionText={whyQuestionText} onWhyQuestionTextChange={setWhyQuestionText} onWhyQuestionOpenChange={setWhyQuestionOpen} onAskWhy={() => void askScenarioWhy(whyQuestionText)} onAnswer={setTrainingAnswer} onSubmit={submitTrainingAnswer} aiPractice={selectedTrainingModuleSlug ? aiPracticeByModule[selectedTrainingModuleSlug] ?? [] : []} aiPracticeGenerating={aiPracticeGenerating} onGenerateAiPractice={() => void generateMoreAiPractice()} />}
+      }} onOpenCertificates={() => navigate('certificates')} scenario={trainingScenario} loading={trainingLoading} error={trainingError} result={trainingResult} answer={trainingAnswer} streak={trainingStreak} submitting={trainingSubmitting} whyExplanation={whyExplanation} whyError={whyError} whyLoading={whyLoading} whyQuestionOpen={whyQuestionOpen} whyQuestionText={whyQuestionText} onWhyQuestionTextChange={setWhyQuestionText} onWhyQuestionOpenChange={setWhyQuestionOpen} onAskWhy={() => void askScenarioWhy(whyQuestionText)} onAnswer={setTrainingAnswer} onSubmit={submitTrainingAnswer} aiPractice={selectedTrainingModuleSlug ? aiPracticeByModule[selectedTrainingModuleSlug] ?? [] : []} aiPracticeGenerating={aiPracticeGenerating} onGenerateAiPractice={(prompt) => void generateMoreAiPractice(prompt)} />}
       {view === 'organization' && (role === 'organization_admin' || accountType === 'organization') && <OrganizationWorkspace session={session} organizations={organizations} setOrganizations={setOrganizations} onOrganizationCreated={async () => { const profile = await getProfile(session.access_token); if (profile?.role) setRole(profile.role); if (profile?.account_type) setAccountType(profile.account_type); }} />}
       {view === 'organization' && role === 'employee' && <EmployeeOrganizationView organizations={organizations} />}
+      {view === 'assistant' && (canTrain || role === 'marics_admin') && <Suspense fallback={<section className="content"><p className="page-state" role="status">Opening the AI coach...</p></section>}><AssistantChat accessToken={session.access_token} userId={session.user.id} language={language} displayName={displayName} /></Suspense>}
       {view === 'help' && <HelpCentre language={language} />}
       {view === 'reports' && role === 'organization_admin' && <OrganizationReports session={session} organizations={organizations} />}
       {view === 'progress' && canTrain && <ProgressView language={language} summary={trainingSummary} riskProfile={riskProfile} onTraining={() => navigate('training')} onOpenRecommended={() => {
@@ -557,8 +561,8 @@ function App() {
         navigate('training');
       }} />}
       {view === 'certificates' && role !== 'marics_admin' && <CertificatesView accessToken={session.access_token} displayName={displayName} language={language} onTraining={() => navigate('training')} />}
-      {view === 'settings' && canTrain && <SettingsView email={session.user.email ?? ''} displayName={displayName} language={language} accessToken={session.access_token} onSaved={(name, nextLanguage) => { setDisplayName(name); setLanguage(nextLanguage); }} organization={role === 'organization_admin' ? { session, organizations, setOrganizations } : null} />}
-      {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'organization' && view !== 'reports' && view !== 'progress' && view !== 'certificates' && view !== 'settings' && view !== 'help' && role !== 'marics_admin' && <RoleSection role={role} view={view} />}
+      {view === 'settings' && canTrain && <SettingsView email={session.user.email ?? ''} displayName={displayName} language={language} accessToken={session.access_token} onSaved={(name, nextLanguage) => { setDisplayName(name); setLanguage(nextLanguage); void supabase?.auth.updateUser({ data: { full_name: name, preferred_language: nextLanguage } }); }} organization={role === 'organization_admin' ? { session, organizations, setOrganizations } : null} />}
+      {view !== 'overview' && view !== 'assessment' && view !== 'training' && view !== 'assistant' && view !== 'organization' && view !== 'reports' && view !== 'progress' && view !== 'certificates' && view !== 'settings' && view !== 'help' && role !== 'marics_admin' && <RoleSection role={role} view={view} />}
     </>}
     {saveError && <div className="toast error" role="alert">{saveError}</div>}
   </main>;
@@ -632,7 +636,7 @@ function PublicSite({ language, setLanguage, sessionNotice = null, onClearSessio
       </div>
       <div className="public-steps">
         {t.landing.features.map((feature, index) => (
-          <article key={feature}>
+          <article key={feature} className={`method-card tone-${index}`}>
             <span>0{index + 1}</span>
             <h3>{feature}</h3>
             <p>{t.landing.featureBodies[index]}</p>
@@ -866,6 +870,7 @@ function PlatformAdminDashboard({ displayName, session }: { displayName: string;
 function NavIcon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     dashboard: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+    assistant: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
     users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
     organization: 'M3 21h18M5 21V5l7-3 7 3v16M9 21v-5h6v5M8 8h1M15 8h1M8 11h1M15 11h1',
     modules: 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h5',
@@ -878,17 +883,20 @@ function NavIcon({ name }: { name: string }) {
   return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] ?? paths.dashboard} /></svg>;
 }
 function Sidebar({ role, accountType, displayName, organizationName, language, onLanguageChange, view, setView, onboardingLocked, hasOrganizations, onSignOut }: { role: AppRole; accountType: string; displayName: string; organizationName: string | null; language: Language; onLanguageChange: (language: Language) => void; view: View; setView: (view: View) => void; onboardingLocked: boolean; hasOrganizations: boolean; onSignOut: () => void }) {
+  const t = getTranslations(language);
+  const nav = t.workspace.nav;
+  const labelFor = (key: string, fallback: string) => nav[key as keyof typeof nav] ?? fallback;
   const navigation = role === 'marics_admin'
-      ? [['overview', 'dashboard', 'Dashboard'], ['users', 'users', 'Users'], ['organization', 'organization', 'Organizations'], ['modules', 'modules', 'Training'], ['reports', 'reports', 'Analytics'], ['demo-requests', 'users', 'Demo requests'], ['audit', 'reports', 'Audit log'], ['settings', 'settings', 'Settings']]
+      ? [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['users', 'users', labelFor('users', 'Users')], ['organization', 'organization', labelFor('organization', 'Organizations')], ['modules', 'modules', labelFor('modules', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['reports', 'reports', labelFor('reports', 'Analytics')], ['demo-requests', 'users', labelFor('demo-requests', 'Demo requests')], ['audit', 'reports', labelFor('audit', 'Audit log')], ['settings', 'settings', labelFor('settings', 'Settings')]]
     : role === 'organization_admin'
-      ? [['overview', 'dashboard', 'Dashboard'], ['organization', 'organization', 'Organization'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['reports', 'reports', 'Reports'], ['settings', 'settings', 'Settings']]
+      ? [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['organization', 'organization', labelFor('organization', 'Organization')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['reports', 'reports', labelFor('reports', 'Reports')], ['settings', 'settings', labelFor('settings', 'Settings')]]
       : role === 'employee'
-        ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'My training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization'], ['settings', 'settings', 'Settings']]
+        ? [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'My training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['organization', 'organization', labelFor('organization', 'Organization')], ['settings', 'settings', labelFor('settings', 'Settings')]]
         : accountType === 'organization'
-          ? [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['organization', 'organization', 'Organization'], ['settings', 'settings', 'Settings']]
-          : [['overview', 'dashboard', 'Dashboard'], ['assessment', 'assessment', 'My risk profile'], ['training', 'training', 'Training'], ['progress', 'progress', 'Progress'], ['certificates', 'certificates', 'Certificates'], ['settings', 'settings', 'Settings']];
+          ? [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['organization', 'organization', labelFor('organization', 'Organization')], ['settings', 'settings', labelFor('settings', 'Settings')]]
+          : [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['settings', 'settings', labelFor('settings', 'Settings')]];
   const accountLabel = accountTypeLabel(role, organizationName);
-  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button type="button" onClick={onSignOut} aria-label="Sign out"><span>&#8617;</span> Sign out</button><button type="button" onClick={() => setView('help')} aria-label="Help centre"><span>?</span> Help centre</button></div></aside>;
+  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">{t.workspace.language}<select aria-label={t.workspace.language} value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button type="button" onClick={onSignOut} aria-label={t.workspace.signOut}><span>&#8617;</span> {t.workspace.signOut}</button><button type="button" onClick={() => setView('help')} aria-label={t.workspace.help}><span>?</span> {t.workspace.help}</button></div></aside>;
 }
 
 function AssessmentView({ language, t, loading, saving, error, saveError = null, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; saveError?: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
@@ -987,6 +995,7 @@ function SettingsView({ email, displayName, language, accessToken, onSaved, orga
     setOrganizations: Dispatch<SetStateAction<OrgMembership[]>>;
   } | null;
 }) {
+  const t = getTranslations(language);
   const [fullName, setFullName] = useState(displayName);
   const [preferredLanguage, setPreferredLanguage] = useState<Language>(language);
   const [password, setPassword] = useState('');
@@ -994,6 +1003,19 @@ function SettingsView({ email, displayName, language, accessToken, onSaved, orga
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setPreferredLanguage(language); }, [language]);
+  useEffect(() => { setFullName(displayName); }, [displayName]);
+
+  const applyLanguage = async (nextLanguage: Language) => {
+    setPreferredLanguage(nextLanguage);
+    onSaved(fullName, nextLanguage);
+    try {
+      await updateProfileSettings(accessToken, { fullName, preferredLanguage: nextLanguage });
+      setMessage(t.workspace.profileSaved);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Language could not be saved.');
+    }
+  };
 
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
@@ -1003,7 +1025,8 @@ function SettingsView({ email, displayName, language, accessToken, onSaved, orga
       setFullName(saved.full_name);
       setPreferredLanguage(saved.preferred_language);
       onSaved(saved.full_name, saved.preferred_language);
-      setMessage('Profile settings saved.');
+      await supabase?.auth.updateUser({ data: { full_name: saved.full_name, preferred_language: saved.preferred_language } });
+      setMessage(t.workspace.profileSaved);
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Profile settings could not be saved.'); } finally { setBusy(false); }
   };
 
@@ -1021,11 +1044,11 @@ function SettingsView({ email, displayName, language, accessToken, onSaved, orga
   };
 
   return <section className="content">
-    <Header eyebrow="ACCOUNT / PREFERENCES" title="Settings" detail={organization ? 'Manage your profile, sign-in security, and organization workspace.' : 'Manage your personal details and sign-in security.'} />
+    <Header eyebrow={t.workspace.settingsEyebrow} title={t.workspace.settingsTitle} detail={organization ? t.workspace.settingsDetail : t.workspace.settingsDetail} />
     {message && <p className="settings-message" role="status">{message}</p>}{error && <p className="settings-error" role="alert">{error}</p>}
     {organization && <OrganizationSettingsPanel session={organization.session} organizations={organization.organizations} setOrganizations={organization.setOrganizations} />}
     <div className="settings-grid">
-      <article className="settings-panel"><p className="card-kicker">PROFILE</p><form className="settings-form" onSubmit={saveProfile}><label>Email address<input value={email} readOnly /></label><label>Display name<input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={1} maxLength={160} /></label><label>Preferred language<select value={preferredLanguage} onChange={(event) => setPreferredLanguage(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button className="primary" disabled={busy}>{busy ? 'Saving...' : 'Save profile'} <b>&#8594;</b></button></form></article>
+      <article className="settings-panel"><p className="card-kicker">{t.workspace.profile.toUpperCase()}</p><form className="settings-form" onSubmit={saveProfile}><label>{t.workspace.email}<input value={email} readOnly /></label><label>{t.workspace.displayName}<input value={fullName} onChange={(event) => setFullName(event.target.value)} required minLength={1} maxLength={160} /></label><label>{t.workspace.preferredLanguage}<select value={preferredLanguage} onChange={(event) => void applyLanguage(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button className="primary" disabled={busy}>{busy ? t.workspace.saving : t.workspace.saveProfile} <b>&#8594;</b></button></form></article>
       <article className="settings-panel"><p className="card-kicker">SIGN-IN SECURITY</p><form className="settings-form" onSubmit={changePassword}><label>New password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label><label>Confirm new password<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></label><p>Your password is managed by Supabase Auth and is never stored by the MARICS API.</p><button className="primary" disabled={busy}>{busy ? 'Updating...' : 'Update password'} <b>&#8594;</b></button></form></article>
     </div>
   </section>;
@@ -1178,10 +1201,10 @@ function roleLabel(role: AppRole) {
 }
 
 function accountTypeLabel(role: AppRole, organizationName: string | null) {
-  if (role === 'marics_admin') return 'MARICS administrator account';
-  if (role === 'organization_admin') return organizationName ? `${organizationName} admin account` : 'Organization admin account';
-  if (role === 'employee') return organizationName ? `${organizationName} account` : 'Employee account';
-  return 'Individual account';
+  if (role === 'marics_admin') return 'MARICS administrator';
+  if (role === 'organization_admin') return organizationName ? `Admin · ${organizationName}` : 'Organization admin';
+  if (role === 'employee') return organizationName ? `Employee · ${organizationName}` : 'Employee';
+  return 'Individual learner';
 }
 
 function timeGreeting(displayName: string) {
@@ -1255,7 +1278,7 @@ function AdminSecondaryView({ view, session }: { view: View; session: Session })
 }
 
 function RoleSection({ role, view }: { role: AppRole; view: View }) {
-  const labels: Record<View, string> = { overview: 'Dashboard', assessment: 'Risk profile', training: 'Training', organization: 'Organization', certificates: 'Certificates', progress: 'Progress', users: 'Users', modules: 'Training modules', 'ai-content': 'AI content', reports: 'Reports', settings: 'Settings', audit: 'Audit log', 'demo-requests': 'Demo requests', help: 'Help centre' };
+  const labels: Record<View, string> = { overview: 'Dashboard', assessment: 'Risk profile', training: 'Training', assistant: 'AI coach', organization: 'Organization', certificates: 'Certificates', progress: 'Progress', users: 'Users', modules: 'Training modules', 'ai-content': 'AI content', reports: 'Reports', settings: 'Settings', audit: 'Audit log', 'demo-requests': 'Demo requests', help: 'Help centre' };
   const descriptions = role === 'marics_admin'
     ? 'Platform-level management stays separate from personal training. This area will expose audited controls and database-backed records.'
     : role === 'organization_admin'
@@ -1396,12 +1419,41 @@ function TeamRiskPanel({ teamRisk }: { teamRisk?: { assessedEmployees: number; c
   return <article className="team-risk"><p className="card-kicker">TEAM RISK</p><h2>{notEnoughData ? 'Not enough assessment data yet' : `Highest-risk area: ${teamRisk.highestRiskArea}`}</h2>{notEnoughData ? <p>Aggregate category risk is shown after at least five employees complete the baseline assessment. Individual answers stay private.</p> : <div>{teamRisk.categoryBreakdown.map((item) => <div className="risk-bar" key={item.category}><span>{item.category}</span><span><i style={{ width: `${item.weakPercent}%` }} /></span><span>{item.weakPercent}%</span></div>)}</div>}</article>;
 }
 
+function downloadBlob(contents: Blob, filename: string) {
+  const url = URL.createObjectURL(contents);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+type OrganizationReportPayload = {
+  generatedAt?: string;
+  dashboard?: {
+    organization?: { id: string; name: string };
+    employeeCount?: number;
+    trainedEmployees?: number;
+    attempted?: number;
+    correct?: number;
+    employees?: Array<{ id: string; name: string; attempted: number; correct: number }>;
+    teamRisk?: { assessedEmployees: number; categoryBreakdown: Array<{ category: string; weakCount: number; weakPercent: number }>; highestRiskArea: string; highestRiskPercent: number };
+  };
+};
+
+function reportDashboard(report: unknown) {
+  const payload = report as OrganizationReportPayload | OrganizationReportPayload['dashboard'];
+  if (payload && 'dashboard' in payload && payload.dashboard) return payload.dashboard;
+  return payload as OrganizationReportPayload['dashboard'];
+}
+
 function OrganizationReports({ session, organizations }: { session: Session; organizations: OrgMembership[] }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [report, setReport] = useState<Awaited<ReturnType<typeof createOrganizationReport>> | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
+  const [exporting, setExporting] = useState<string | null>(null);
   useEffect(() => {
     if (!organizationId) {
       setLoading(false);
@@ -1417,9 +1469,43 @@ function OrganizationReports({ session, organizations }: { session: Session; org
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [organizationId, reload, session.access_token]);
-  const download = async () => { if (!organizationId) return; try { const csv = await createOrganizationCsvReport(session.access_token, organizationId); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'marics-organization-report.csv'; link.click(); URL.revokeObjectURL(url); } catch (error) { setMessage(error instanceof Error ? error.message : 'CSV report could not be generated.'); } };
-  const dashboard = report?.dashboard;
-  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review aggregate organization reporting and export the current CSV." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><button className="text-button" onClick={() => void download()}>Download CSV <b>&#8595;</b></button></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{dashboard && <><p className="lede">Generated {new Date(report.generatedAt).toLocaleString()}</p><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees}</strong></article><article><span>ASSESSED</span><strong>{dashboard.teamRisk?.assessedEmployees ?? 0}</strong></article><article><span>TEAM ACCURACY</span><strong>{dashboard.attempted ? Math.round((dashboard.correct / dashboard.attempted) * 100) : 0}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><article className="employee-panel"><div className="section-heading"><div><p className="card-kicker">EMPLOYEE SUMMARY</p><h2>Participation snapshot</h2></div></div>{dashboard.employees.length ? <div className="employee-list">{dashboard.employees.map((employee) => <div className="employee-row" key={employee.id}><div className="employee-row-main"><strong>{employee.name}</strong><span>{employee.modulesCompleted}/{employee.modulesTotal} modules · {employee.attempted} attempts · {employee.correct} correct</span><small>{employee.riskSummary}</small></div></div>)}</div> : <p className="admin-empty-text">No employees in this workspace yet.</p>}</article></>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
+  const dashboard = reportDashboard(report);
+  const orgName = dashboard?.organization?.name ?? organizations.find((entry) => entry.id === organizationId)?.name ?? 'Organization';
+  const generatedAt = (report as OrganizationReportPayload)?.generatedAt ?? new Date().toISOString();
+  const accuracy = dashboard?.attempted ? Math.round(((dashboard.correct ?? 0) / dashboard.attempted) * 100) : 0;
+  const employeeRows = dashboard?.employees ?? [];
+  const reportHtml = () => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>MARICS report — ${orgName}</title>
+    <style>body{font-family:Arial,sans-serif;color:#102536;padding:32px}h1{font-family:Georgia,serif}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #cbd9e3;padding:8px;text-align:left}th{background:#eaf2f8}</style></head>
+    <body><p>MARICS Security</p><h1>${orgName} team risk report</h1><p>Generated ${new Date(generatedAt).toLocaleString()}</p>
+    <p>Employees: ${dashboard?.employeeCount ?? 0} · Trained: ${dashboard?.trainedEmployees ?? 0} · Attempts: ${dashboard?.attempted ?? 0} · Accuracy: ${accuracy}%</p>
+    <table><thead><tr><th>Employee</th><th>Attempts</th><th>Correct</th></tr></thead><tbody>
+    ${employeeRows.map((employee) => `<tr><td>${employee.name}</td><td>${employee.attempted}</td><td>${employee.correct}</td></tr>`).join('') || '<tr><td colspan="3">No employee activity yet.</td></tr>'}
+    </tbody></table></body></html>`;
+  const downloadCsv = async () => {
+    if (!organizationId) return;
+    setExporting('csv');
+    try {
+      const csv = await createOrganizationCsvReport(session.access_token, organizationId);
+      downloadBlob(new Blob([csv], { type: 'text/csv' }), 'marics-organization-report.csv');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'CSV report could not be generated.'); }
+    finally { setExporting(null); }
+  };
+  const downloadWord = () => {
+    setExporting('word');
+    downloadBlob(new Blob([reportHtml()], { type: 'application/msword' }), 'marics-organization-report.doc');
+    setExporting(null);
+  };
+  const downloadPdf = () => {
+    setExporting('pdf');
+    const preview = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
+    if (!preview) { setMessage('Allow pop-ups to export a PDF.'); setExporting(null); return; }
+    preview.document.write(reportHtml());
+    preview.document.close();
+    preview.focus();
+    preview.print();
+    setExporting(null);
+  };
+  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Review live organization participation, then export CSV, Word, or PDF." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><div className="report-exports"><button className="text-button" disabled={Boolean(exporting)} onClick={() => void downloadCsv()}>{exporting === 'csv' ? 'Preparing CSV...' : 'CSV'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadWord}>{exporting === 'word' ? 'Preparing Word...' : 'Word'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadPdf}>{exporting === 'pdf' ? 'Preparing PDF...' : 'PDF'} <b>↓</b></button></div></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{dashboard && <div className="report-board"><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount ?? 0}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees ?? 0}</strong></article><article><span>ATTEMPTS</span><strong>{dashboard.attempted ?? 0}</strong></article><article><span>ACCURACY</span><strong>{accuracy}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><article className="employee-panel report-people"><div className="section-heading"><div><p className="card-kicker">RECORDED PEOPLE</p><h2>Employee activity from the database</h2></div><span>{employeeRows.length} records</span></div>{employeeRows.length ? <div className="employee-list">{employeeRows.map((employee) => <div className="employee-row" key={employee.id}><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>)}</div> : <div className="empty-state"><span>0</span><p>No employee attempts are stored yet.<br /><small>Invite people and have them complete training to fill this report.</small></p></div>}</article></div>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
 }
 
 function OrganizationSettingsPanel({ session, organizations, setOrganizations }: { session: Session; organizations: OrgMembership[]; setOrganizations: Dispatch<SetStateAction<OrgMembership[]>> }) {
@@ -1463,7 +1549,7 @@ function Header({ eyebrow, title, detail }: { eyebrow: string; title: string; de
 
 type TrainingSummary = { attempted: number; correct: number; lastAttemptAt: string | null; modules: Array<{ id: string; slug: string; title: Record<string, string>; scenarioCount: number; scenariosAttempted: number; scenariosCorrect: number; completed: boolean; aiScenariosAttempted?: number; aiScenariosCorrect?: number }>; recommendation: { slug: string; title: Record<string, string>; reason: 'focus-area' | 'next-unfinished' } | null };
 
-function Overview({ displayName, onboardingComplete, riskProfile, trainingSummary, trainingModules, onAssessment, onTraining }: { displayName: string; onboardingComplete: boolean; riskProfile: RiskProfile | null; trainingSummary: TrainingSummary; trainingModules: TrainingModule[]; onAssessment: () => void; onTraining: () => void }) {
+function Overview({ displayName, onboardingComplete, riskProfile, trainingSummary, trainingModules, onAssessment, onTraining, organizationName, onOrganization }: { displayName: string; onboardingComplete: boolean; riskProfile: RiskProfile | null; trainingSummary: TrainingSummary; trainingModules: TrainingModule[]; onAssessment: () => void; onTraining: () => void; organizationName?: string | null; onOrganization?: () => void }) {
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const progressBySlug = new Map(trainingSummary.modules.map((module) => [module.slug, module]));
   const modules = trainingModules.map((module, index) => {
@@ -1473,10 +1559,10 @@ function Overview({ displayName, onboardingComplete, riskProfile, trainingSummar
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const weakCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'weak').length;
   const strongCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'strong').length;
-  return <section className="content"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." /><div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Complete the opening quiz first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten pressure scenarios set your strengths, weaknesses, and vulnerability level before training unlocks.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
+  return <section className="content"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." />{organizationName && onOrganization && <div className="org-personal-banner"><div><p className="card-kicker">YOUR ORGANIZATION</p><h2>{organizationName}</h2><p>This Dashboard is your individual learning home. Team metrics stay in Organization.</p></div><button className="text-button" type="button" onClick={onOrganization}>Open organization workspace <b>→</b></button></div>}<div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Complete the opening quiz first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten pressure scenarios set your strengths, weaknesses, and vulnerability level before training unlocks.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
 }
 
-function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, onRetryCatalog, onOpenCertificates, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, whyQuestionOpen, whyQuestionText, onWhyQuestionTextChange, onWhyQuestionOpenChange, onAskWhy, onAnswer, onSubmit, aiPractice, aiPracticeGenerating, onGenerateAiPractice }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; onRetryCatalog: () => void; onOpenCertificates: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; whyQuestionOpen: boolean; whyQuestionText: string; onWhyQuestionTextChange: (question: string) => void; onWhyQuestionOpenChange: (open: boolean) => void; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void; aiPractice: AiPracticeScenarioSummary[]; aiPracticeGenerating: boolean; onGenerateAiPractice: () => void }) {
+function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, onRetryCatalog, onOpenCertificates, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, whyQuestionOpen, whyQuestionText, onWhyQuestionTextChange, onWhyQuestionOpenChange, onAskWhy, onAnswer, onSubmit, aiPractice, aiPracticeGenerating, onGenerateAiPractice }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; onRetryCatalog: () => void; onOpenCertificates: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; whyQuestionOpen: boolean; whyQuestionText: string; onWhyQuestionTextChange: (question: string) => void; onWhyQuestionOpenChange: (open: boolean) => void; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void; aiPractice: AiPracticeScenarioSummary[]; aiPracticeGenerating: boolean; onGenerateAiPractice: (prompt?: string) => void }) {
   const selectedModule = modules.find((module) => module.slug === selectedModuleSlug) ?? modules[0];
   const progress = summary.modules.find((module) => module.slug === selectedModule?.slug);
   const materialLanguage = selectedModule?.learningMaterial?.[language] ? language : 'en';
@@ -1493,6 +1579,7 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
   };
   const content = activeScenario?.content[language] ?? activeScenario?.content.en ?? (activeScenario ? Object.values(activeScenario.content)[0] : undefined);
   const optionKeys: TrainingOptionKey[] = ['A', 'B', 'C', 'D'];
+  const [aiPrompt, setAiPrompt] = useState('');
   const [inspectState, setInspectState] = useState({ slug: selectedScenarioSlug, complete: false });
   useEffect(() => {
     setInspectState({ slug: selectedScenarioSlug, complete: false });
@@ -1556,10 +1643,13 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
       {manualsComplete && <article className="ai-practice-panel">
         <div>
           <p className="card-kicker">AI PRACTICE UNLOCKED</p>
-          <h2>Generate fresh Claude scenarios for this module</h2>
-          <p>You have finished the manually written scenarios. MARICS can now create new practice situations from this module’s objectives and threat category. Your answers still update progress, history, and your Human Risk Profile.</p>
+          <h2>Describe the situation you want to practice</h2>
+          <p>Claude will write a new scenario from your prompt, still inside this module. Leave the box empty to get a random situation. Your answers still update progress, history, and your Human Risk Profile.</p>
         </div>
-        <button className="primary" type="button" disabled={aiPracticeGenerating} onClick={onGenerateAiPractice}>{aiPracticeGenerating ? 'Generating with Claude...' : 'Generate AI scenario'} <b>&#8594;</b></button>
+        <label className="ai-practice-prompt-label">Your prompt
+          <textarea value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} maxLength={500} rows={3} placeholder="Example: A WhatsApp message from someone pretending to be my manager, asking me to buy airtime vouchers after hours." disabled={aiPracticeGenerating} />
+        </label>
+        <button className="primary" type="button" disabled={aiPracticeGenerating} onClick={() => onGenerateAiPractice(aiPrompt)}>{aiPracticeGenerating ? 'Generating with Claude...' : aiPrompt.trim() ? 'Generate from my prompt' : 'Generate AI scenario'} <b>&#8594;</b></button>
       </article>}
       {loading && <p className="page-state" role="status">{aiPracticeGenerating ? 'Claude is writing a new practice scenario...' : 'Loading scenario...'}</p>}
       {error && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" type="button" onClick={() => selectedScenarioSlug && onScenarioSelect(selectedScenarioSlug)}>Retry scenario</button></div>}
@@ -1580,7 +1670,7 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
           {whyExplanation && <p className="ask-why-answer" role="status"><strong>More context:</strong> {whyExplanation}</p>}
           {!result.isCorrect && <p className="feedback-correct">The strongest response is option {result.correctOptionKey}.</p>}
           <span>Manipulation signals: {activeScenario.riskDimensions.join(' + ')}</span>
-          <button className="text-button training-next" type="button" onClick={result.moduleCompleted && manualsComplete ? onGenerateAiPractice : onNextScenario}>{result.moduleCompleted && manualsComplete ? (aiPracticeGenerating ? 'Generating with Claude...' : 'Generate AI scenario') : 'Next scenario'} <b>&#8594;</b></button>
+          <button className="text-button training-next" type="button" onClick={result.moduleCompleted && manualsComplete ? () => onGenerateAiPractice(aiPrompt) : onNextScenario}>{result.moduleCompleted && manualsComplete ? (aiPracticeGenerating ? 'Generating with Claude...' : aiPrompt.trim() ? 'Generate from my prompt' : 'Generate AI scenario') : 'Next scenario'} <b>&#8594;</b></button>
         </div>}
       </article>}
     </>}
@@ -1663,6 +1753,8 @@ function HelpCentre({ language }: { language: Language }) {
     <p>{t.quizBody}</p>
     <h2>{t.trainingTitle}</h2>
     <p>{t.trainingBody}</p>
+    <h2>{t.coachTitle}</h2>
+    <p>{t.coachBody}</p>
     <h2>{t.orgTitle}</h2>
     <p>{t.orgBody}</p>
   </article></section>;

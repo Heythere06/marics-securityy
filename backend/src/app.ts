@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { createAuthenticatedClient } from './lib/supabase.js';
 import { assessmentSubmissionSchema, getOnboardingAssessment, submitAssessment } from './modules/assessments.js';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, trainingAnswerSchema } from './modules/training.js';
-import { explainScenarioWhy, generateScenario, refundScenarioWhy, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
+import { chatSchema, chatWithCoach, explainScenarioWhy, generateScenario, refundScenarioWhy, reserveScenarioWhy, scenarioGenerationSchema, scenarioWhySchema } from './modules/ai.js';
 import { aiPracticeAnswerSchema, aiPracticeGenerateSchema, generateAiPracticeScenario, getAiPracticeScenario, listAiPracticeScenarios, recordAiPracticeAnswer } from './modules/aiPractice.js';
 import { acceptInvitation, acceptInvitationSchema, createInvitation, createOrganization, getInvitationByToken, getOrganizationDashboard, getOrganizationReport, listOrganizations, organizationSchema, organizationSettingsSchema, previewInvitationByToken, removeOrganizationMember, invitationSchema, updateOrganization } from './modules/organizations.js';
 import {
@@ -709,6 +709,22 @@ export function buildApp() {
       if (error instanceof z.ZodError || error instanceof SyntaxError) return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The generated scenario could not be validated. Please try again.' });
       request.log.error(error, 'AI scenario generation failed');
       return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'We could not generate a scenario right now. Please try again later.' });
+    }
+  });
+
+  app.post('/api/ai/chat', { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } }, async (request, reply) => {
+    try {
+      const auth = await requireUser(request);
+      const input = chatSchema.parse(request.body);
+      const replyText = await chatWithCoach(input);
+      return reply.send({ reply: replyText });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to chat with the MARICS coach.' });
+      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CHAT', message: 'Send a short message to continue the conversation.' });
+      if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The MARICS coach is not configured yet.' });
+      if (error instanceof Error && error.message === 'AI_INVALID_OUTPUT') return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The coach could not reply. Please try again.' });
+      request.log.error(error, 'AI coach chat failed');
+      return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The coach is unavailable right now. Please try again later.' });
     }
   });
 

@@ -20,6 +20,7 @@ vi.mock('./ai.js', () => ({
   })),
 }));
 
+import { generatePracticeScenarioDraft } from './ai.js';
 import { generateAiPracticeScenario } from './aiPractice.js';
 
 describe('ai practice generation gate', () => {
@@ -129,9 +130,13 @@ describe('ai practice generation gate', () => {
       moduleSlug: 'phishing-email-fundamentals',
       language: 'en',
       difficulty: 'intermediate',
+      prompt: 'WhatsApp invoice from a supplier asking me to change banking details today',
     });
     expect(scenario.source).toBe('ai');
     expect(scenario.slug.startsWith('ai-practice-phishing-email-fundamentals-')).toBe(true);
     expect(scenario.options).toHaveLength(4);
+    expect(generatePracticeScenarioDraft).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'WhatsApp invoice from a supplier asking me to change banking details today',
+    }));
   });
 });

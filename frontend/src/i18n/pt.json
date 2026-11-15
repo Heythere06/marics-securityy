@@ -64,7 +64,9 @@
     "trainingTitle": "Treino",
     "trainingBody": "Conclua primeiro os cenários escritos manualmente de um módulo. Depois, a MARICS pode gerar cenários adicionais de prática com Claude AI. Respostas manuais e de IA atualizam o progresso, histórico e Perfil de Risco Humano. Os certificados desbloqueiam depois de concluir os cenários manuais de cada módulo publicado e de passar a avaliação de certificação.",
     "orgTitle": "Organizações",
-    "orgBody": "Convide colaboradores com uma ligação única por e-mail. Os administradores veem apenas o risco agregado da equipa. As respostas individuais permanecem privadas. Os rótulos da barra lateral mostram o nome da organização mais “conta” quando pertence a um espaço de trabalho."
+    "orgBody": "Convide colaboradores com uma ligação única por e-mail. Os administradores veem apenas o risco agregado da equipa. As respostas individuais permanecem privadas. Os rótulos da barra lateral mostram o nome da organização mais “conta” quando pertence a um espaço de trabalho.",
+    "coachTitle": "Treinador de IA",
+    "coachBody": "Abra Treinador de IA na barra lateral para falar diretamente com o assistente MARICS. Pergunte sobre uma mensagem, chamada ou hábito. Este chat não substitui os quizzes de Formação. A conversa fica neste separador e é apagada quando sai do site."
   },
   "training": {
     "whatShouldYouDo": "O que deve fazer?",
@@ -104,5 +106,25 @@
     "paymentOnFile": "Em arquivo",
     "paymentRequested": "Alteração pedida",
     "paymentHint": "Dados bancários alterados de fornecedores devem ser verificados com um contacto conhecido já em arquivo, nunca com os contactos do pedido de alteração."
+  },
+  "workspace": {
+    "language": "Idioma",
+    "signOut": "Terminar sessão",
+    "help": "Centro de ajuda",
+    "nav": {
+      "overview": "Painel",
+      "users": "Utilizadores",
+      "organization": "Organização",
+      "modules": "Formação",
+      "reports": "Relatórios",
+      "demo-requests": "Pedidos de demo",
+      "audit": "Registo de auditoria",
+      "settings": "Definições",
+      "assessment": "O meu perfil de risco",
+      "training": "Formação",
+      "assistant": "Treinador de IA",
+      "progress": "Progresso",
+      "certificates": "Certificados"
+    }
   }
 }

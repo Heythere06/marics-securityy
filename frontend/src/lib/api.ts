@@ -288,6 +288,18 @@ export async function generateScenario(accessToken: string, input: { moduleSlug:
   return payload.scenario;
 }
 
+export async function chatWithCoach(accessToken: string, input: { language: 'en' | 'af' | 'pt'; message: string; history: Array<{ role: 'user' | 'assistant'; content: string }> }) {
+  const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/chat`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(45_000),
+  });
+  const payload = await response.json().catch(() => ({})) as { reply?: string; message?: string };
+  if (!response.ok || !payload.reply) throw new Error(payload.message ?? 'The MARICS coach could not reply');
+  return payload.reply;
+}
+
 export async function getScenarioWhy(accessToken: string, input: { language: 'en' | 'af' | 'pt'; question: { moduleTitle: string; scenarioTitle: string; scenarioPrompt: string; options: Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>; selectedOptionKey: 'A' | 'B' | 'C' | 'D'; correctOptionKey: 'A' | 'B' | 'C' | 'D'; selectedAnswer: string; correctAnswer: string; isCorrect: boolean; riskDimensions: string[]; existingExplanation: string; userQuestion: string } }, signal?: AbortSignal) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/ai/scenario-why`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal: mergeAbortSignals(signal, 25_000) });
   const payload = await response.json().catch(() => ({})) as { explanation?: string; message?: string };
@@ -408,11 +420,11 @@ export async function listAiPracticeScenarios(accessToken: string, moduleSlug: s
   return (await response.json()).scenarios as AiPracticeScenarioSummary[];
 }
 
-export async function generateAiPracticeScenario(accessToken: string, moduleSlug: string, language: 'en' | 'af' | 'pt', difficulty: 'foundation' | 'intermediate' | 'advanced' = 'intermediate', signal?: AbortSignal) {
+export async function generateAiPracticeScenario(accessToken: string, moduleSlug: string, language: 'en' | 'af' | 'pt', difficulty: 'foundation' | 'intermediate' | 'advanced' = 'intermediate', prompt?: string, signal?: AbortSignal) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/training/modules/${moduleSlug}/ai-practice`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ language, difficulty }),
+    body: JSON.stringify({ language, difficulty, ...(prompt?.trim() ? { prompt: prompt.trim() } : {}) }),
     signal: mergeAbortSignals(signal, 45_000),
   });
   const payload = await response.json().catch(() => ({})) as { scenario?: TrainingScenario; message?: string };

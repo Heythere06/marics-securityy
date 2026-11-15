@@ -64,7 +64,9 @@
     "trainingTitle": "Training",
     "trainingBody": "Complete the manually written scenarios in a module first. When they are done, MARICS can generate additional Claude AI practice scenarios for that module. Both manual and AI answers update your progress, history, and Human Risk Profile. Certificates unlock after every published module’s manual scenarios are complete and you pass the certification assessment.",
     "orgTitle": "Organizations",
-    "orgBody": "Invite employees with a one-time email link. Administrators see aggregate team risk only. Individual answers stay private. Sidebar labels show your organization name plus “account” when you belong to a workspace."
+    "orgBody": "Invite employees with a one-time email link. Administrators see aggregate team risk only. Individual answers stay private. Sidebar labels show your organization name plus “account” when you belong to a workspace.",
+    "coachTitle": "AI coach",
+    "coachBody": "Open AI coach in the sidebar to talk directly with the MARICS assistant. Ask about a message, call, or habit. This chat does not replace Training quizzes. The conversation stays in this browser tab and is cleared when you leave the site."
   },
   "training": {
     "whatShouldYouDo": "What should you do?",
@@ -104,5 +106,25 @@
     "paymentOnFile": "On file",
     "paymentRequested": "Requested change",
     "paymentHint": "Changed supplier bank details should be verified with a known contact already on file, never using the contact details in the change request."
+  },
+  "workspace": {
+    "language": "Language",
+    "signOut": "Sign out",
+    "help": "Help centre",
+    "nav": {
+      "overview": "Dashboard",
+      "users": "Users",
+      "organization": "Organization",
+      "modules": "Training",
+      "reports": "Reports",
+      "demo-requests": "Demo requests",
+      "audit": "Audit log",
+      "settings": "Settings",
+      "assessment": "My risk profile",
+      "training": "Training",
+      "assistant": "AI coach",
+      "progress": "Progress",
+      "certificates": "Certificates"
+    }
   }
 }

@@ -9,6 +9,7 @@ export const aiPracticeGenerateSchema = z.object({
   moduleSlug: z.string().min(1).max(80).regex(/^[a-z0-9-]+$/),
   language: z.enum(['en', 'af', 'pt']).default('en'),
   difficulty: z.enum(['foundation', 'intermediate', 'advanced']).default('intermediate'),
+  prompt: z.string().trim().min(1).max(500).optional(),
 });
 
 export const aiPracticeAnswerSchema = z.object({
@@ -89,6 +90,7 @@ export async function generateAiPracticeScenario(client: SupabaseClient, user: U
     difficulty: input.difficulty,
     threatCategory: threatCategoryFromSlug(module.slug),
     learningObjectives: material ? [material.whyItMatters, material.warningSigns, material.bestPractice].filter(Boolean).join(' ') : description,
+    prompt: input.prompt,
   });
 
   const slug = `ai-practice-${module.slug}-${randomUUID().slice(0, 8)}`;
