@@ -33,6 +33,13 @@ export async function requireOrganizationAdmin(client: SupabaseClient, organizat
   const { data, error } = await client.from('organization_memberships').select('is_admin').eq('organization_id', organizationId).eq('user_id', auth.user.id).maybeSingle();
   if (error) throw error;
   if (!data?.is_admin) throw new Error('FORBIDDEN');
+  const { data: organization, error: organizationError } = await client
+    .from('organizations')
+    .select('suspended_at')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (organizationError) throw organizationError;
+  if (organization?.suspended_at) throw new Error('ORGANIZATION_SUSPENDED');
 }
 
 export async function createInvitation(client: SupabaseClient, organizationId: string, email: string) {
@@ -83,18 +90,20 @@ export async function previewInvitationByToken(rawToken: string) {
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
   const { data, error } = await service
     .from('organization_invitations')
-    .select('email, expires_at, accepted_at, organizations(id, name)')
+    .select('expires_at, accepted_at, organizations(id, name)')
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error('INVITATION_INVALID');
   const organization = Array.isArray(data.organizations) ? data.organizations[0] : data.organizations;
+  const isExpired = new Date(data.expires_at).getTime() <= Date.now();
+  const isUsed = Boolean(data.accepted_at);
+  // Public preview must not expose invitee email / expiry timestamps (PII).
   return {
     organizationName: organization?.name ?? 'Organization',
-    email: data.email as string,
-    expiresAt: data.expires_at as string,
-    isExpired: new Date(data.expires_at).getTime() <= Date.now(),
-    isUsed: Boolean(data.accepted_at),
+    isExpired,
+    isUsed,
+    status: isUsed ? 'used' as const : isExpired ? 'expired' as const : 'valid' as const,
   };
 }
 
@@ -160,7 +169,24 @@ function isPgcryptoFallbackError(error: { message?: string; details?: string; hi
   return /gen_random_bytes|digest\(|pgcrypto|42883|PGRST202|function .* does not exist/i.test(detail);
 }
 
+async function assertOrganizationNotSuspended(organizationId: string) {
+  const service = createServiceClient();
+  const { data, error } = await service.from('organizations').select('suspended_at').eq('id', organizationId).maybeSingle();
+  if (error) throw error;
+  if (data?.suspended_at) throw new Error('ORGANIZATION_SUSPENDED');
+}
+
 export async function acceptInvitation(client: SupabaseClient, token: string) {
+  const service = createServiceClient();
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const { data: invitationPeek, error: peekError } = await service
+    .from('organization_invitations')
+    .select('organization_id')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+  if (peekError) throw peekError;
+  if (invitationPeek?.organization_id) await assertOrganizationNotSuspended(invitationPeek.organization_id);
+
   const { data, error } = await client.rpc('accept_organization_invitation', { raw_token: token });
   if (!error) return data as { organizationId: string };
 
@@ -175,8 +201,6 @@ export async function acceptInvitation(client: SupabaseClient, token: string) {
   const { data: authUser, error: authError } = await client.auth.getUser();
   if (authError || !authUser.user) throw new Error('AUTH_REQUIRED');
 
-  const service = createServiceClient();
-  const tokenHash = createHash('sha256').update(token).digest('hex');
   const { data: invitation, error: invitationError } = await service
     .from('organization_invitations')
     .select('id, email, expires_at, accepted_at, organization_id')

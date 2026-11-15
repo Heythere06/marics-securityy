@@ -39,6 +39,7 @@ describe('invitation integrity', () => {
             select() { return this; },
             eq() { return this; },
             single() { return Promise.resolve({ data: { name: 'Star' }, error: null }); },
+            maybeSingle() { return Promise.resolve({ data: { suspended_at: null }, error: null }); },
           };
         }
         if (table === 'profiles') {
@@ -98,6 +99,15 @@ describe('invitation integrity', () => {
             upsert() {
               calls.push('upsert-membership');
               return Promise.resolve({ error: null });
+            },
+          };
+        }
+        if (table === 'organizations') {
+          return {
+            select() { return this; },
+            eq() { return this; },
+            maybeSingle() {
+              return Promise.resolve({ data: { suspended_at: null }, error: null });
             },
           };
         }

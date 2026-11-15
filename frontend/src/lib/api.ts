@@ -1,6 +1,13 @@
 async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
   const response = await fetch(input, { ...init, signal: init.signal ?? AbortSignal.timeout(10_000) });
-  if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marics:unauthorized'));
+  if (typeof window !== 'undefined') {
+    if (response.status === 401) window.dispatchEvent(new CustomEvent('marics:unauthorized'));
+    if (response.status === 403) {
+      void response.clone().json().then((payload: { error?: string }) => {
+        if (payload?.error === 'ACCOUNT_SUSPENDED') window.dispatchEvent(new CustomEvent('marics:suspended'));
+      }).catch(() => undefined);
+    }
+  }
   return response;
 }
 
@@ -136,7 +143,7 @@ export async function createInvitation(accessToken: string, organizationId: stri
 export async function previewInvitation(token: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/invitations/preview?token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be previewed');
-  return (await response.json()).invitation as { organizationName: string; email: string; expiresAt: string; isExpired: boolean; isUsed: boolean };
+  return (await response.json()).invitation as { organizationName: string; isExpired: boolean; isUsed: boolean; status: 'valid' | 'expired' | 'used' };
 }
 
 export async function validateInvitation(accessToken: string, token: string) {
@@ -171,8 +178,9 @@ export async function createOrganizationCsvReport(accessToken: string, organizat
 
 export async function acceptOrganizationInvitation(accessToken: string, token: string) {
   const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/api/organizations/invitations/accept`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  if (!response.ok) throw new Error((await response.json()).message ?? 'Invitation could not be accepted');
-  return (await response.json()) as { organizationId: string };
+  const payload = await response.json().catch(() => ({})) as { organizationId?: string; message?: string; error?: string };
+  if (!response.ok) throw new ApiError(payload.message ?? 'Invitation could not be accepted', payload.error ?? 'INVITATION_UNAVAILABLE');
+  return payload as { organizationId: string };
 }
 
 export async function updateLanguage(accessToken: string, preferredLanguage: 'en' | 'af' | 'pt') {

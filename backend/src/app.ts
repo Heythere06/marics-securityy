@@ -59,7 +59,7 @@ async function requireUser(request: { headers: Record<string, string | string[] 
   const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) throw new Error('AUTH_REQUIRED');
   const { data: profile } = await client.from('profiles').select('suspended_at').eq('id', data.user.id).maybeSingle();
-  if (profile?.suspended_at) throw new Error('AUTH_REQUIRED');
+  if (profile?.suspended_at) throw new Error('ACCOUNT_SUSPENDED');
   return { userId: data.user.id, accessToken: token };
 }
 
@@ -149,6 +149,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ requests: await listDemoRequests(client) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view demo requests.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin demo request list failed');
@@ -163,6 +164,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ overview: await getAdminOverview(client) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to access the MARICS admin dashboard.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin overview failed');
@@ -183,6 +185,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.code(201).send({ module: await createAdminModule(client, adminModuleSchema.parse(request.body)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage modules.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Enter a valid module slug, title, and description.', details: error.issues.map((issue) => issue.path.join('.') || 'module').join(', ') });
@@ -198,6 +201,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.code(201).send({ scenario: await createAdminScenario(client, adminScenarioSchema.parse(request.body)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Enter a scenario, exactly four options, and one correct answer.' });
@@ -213,6 +217,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ scenarios: await listAdminScenarios(client, z.string().uuid().parse((request.params as { moduleId: string }).moduleId)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage scenarios.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Choose a valid module.' });
@@ -229,6 +234,7 @@ export function buildApp() {
       const input = adminPublishSchema.parse(request.body);
       return reply.send({ module: await setAdminModulePublished(client, (request.params as { moduleId: string }).moduleId, input.published) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage modules.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Provide a valid publication state.' });
@@ -245,6 +251,7 @@ export function buildApp() {
       const query = z.object({ q: z.string().optional() }).parse(request.query);
       return reply.send({ users: await searchAdminUsers(client, query.q ?? '') });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage users.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin user search failed');
@@ -259,6 +266,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ user: await getAdminUser(client, z.string().uuid().parse((request.params as { userId: string }).userId)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this user.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin user lookup failed');
@@ -275,6 +283,7 @@ export function buildApp() {
       const input = adminUserRoleSchema.parse(request.body);
       return reply.send({ user: await setAdminUserRole(client, userId, input.role) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update user roles.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ROLE', message: 'Choose a supported role.' });
@@ -292,6 +301,7 @@ export function buildApp() {
       const input = adminSuspendSchema.parse(request.body);
       return reply.send({ user: await setAdminUserSuspended(client, userId, input.suspended) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage user access.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_STATE', message: 'Provide a suspension state.' });
@@ -307,6 +317,7 @@ export function buildApp() {
       await resendUserVerification(client, z.string().uuid().parse((request.params as { userId: string }).userId));
       return reply.code(202).send({ status: 'queued' });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to resend verification.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof Error && error.message === 'ADMIN_VERIFICATION_UNAVAILABLE') return reply.code(503).send({ error: 'VERIFICATION_UNAVAILABLE', message: 'Verification resend requires SMTP or Resend plus the Supabase service role on the API server.' });
@@ -326,6 +337,7 @@ export function buildApp() {
       const query = z.object({ q: z.string().optional() }).parse(request.query);
       return reply.send({ organizations: await searchAdminOrganizations(client, query.q ?? '') });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organizations.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin organization search failed');
@@ -340,6 +352,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ organization: await getAdminOrganization(client, z.string().uuid().parse((request.params as { organizationId: string }).organizationId)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this organization.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin organization lookup failed');
@@ -354,6 +367,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.code(201).send({ organization: await createAdminOrganization(client, adminOrganizationSchema.parse(request.body).name) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to create organizations.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ORGANIZATION', message: 'Enter a valid organization name.' });
@@ -370,6 +384,7 @@ export function buildApp() {
       const organizationId = z.string().uuid().parse((request.params as { organizationId: string }).organizationId);
       return reply.send({ organization: await setAdminOrganizationSuspended(client, organizationId, adminSuspendSchema.parse(request.body).suspended) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organizations.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin organization suspension failed');
@@ -387,6 +402,7 @@ export function buildApp() {
       await setAdminOrganizationAdmin(client, organizationId, input.userId, input.isAdmin);
       return reply.send({ status: 'updated' });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organization admins.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ADMIN', message: 'Provide a valid organization admin assignment.' });
@@ -402,6 +418,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ catalog: await getAdminTrainingCatalog(client) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training content.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin training catalog failed');
@@ -417,6 +434,7 @@ export function buildApp() {
       const moduleId = z.string().uuid().parse((request.params as { moduleId: string }).moduleId);
       return reply.send({ module: await updateAdminTrainingModule(client, moduleId, adminModuleUpdateSchema.parse(request.body)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training modules.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MODULE', message: 'Provide valid module content.' });
@@ -433,6 +451,7 @@ export function buildApp() {
       const moduleId = z.string().uuid().parse((request.params as { moduleId: string }).moduleId);
       return reply.send({ module: await archiveAdminTrainingModule(client, moduleId, adminArchiveSchema.parse(request.body).archived) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage training modules.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin training module archive failed');
@@ -447,6 +466,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ analytics: await getAdminPlatformAnalytics(client) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view analytics.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin analytics failed');
@@ -462,6 +482,7 @@ export function buildApp() {
       const query = z.object({ limit: z.coerce.number().int().min(1).max(200).optional() }).parse(request.query);
       return reply.send({ entries: await listAdminAuditLog(client, query.limit ?? 50) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view the audit log.' });
       if (error instanceof Error && error.message === 'ADMIN_FORBIDDEN') return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       request.log.error(error, 'Admin audit log failed');
@@ -476,6 +497,7 @@ export function buildApp() {
       await requireMaricsAdmin(client);
       return reply.send({ setting: await setAdminSetting(client, adminSettingSchema.parse(request.body)) });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage platform settings.' });
       if (error instanceof Error && (error.message === 'ADMIN_FORBIDDEN' || error.message.includes('FORBIDDEN'))) return reply.code(403).send({ error: 'FORBIDDEN', message: 'This area is restricted to MARICS administrators.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SETTING', message: 'Provide supported platform languages.' });
@@ -490,6 +512,7 @@ export function buildApp() {
       const organization = await createOrganization(createAuthenticatedClient(auth.accessToken!), organizationSchema.parse(request.body));
       return reply.code(201).send({ organization });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to create an organization.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ORGANIZATION', message: 'Enter an organization name between 2 and 180 characters.' });
       request.log.error(error, 'Organization creation failed');
@@ -505,8 +528,10 @@ export function buildApp() {
       const organization = await updateOrganization(createAuthenticatedClient(auth.accessToken!), organizationId, input);
       return reply.send({ organization });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update this organization.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ORGANIZATION_SETTINGS', message: 'Provide a valid organization name or language.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended and cannot be updated.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to update this organization.' });
       request.log.error(error, 'Organization update failed');
       return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not update this organization.' });
@@ -519,6 +544,7 @@ export function buildApp() {
       const organizations = await listOrganizations(createAuthenticatedClient(auth.accessToken!));
       return reply.send({ organizations });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your organizations.' });
       request.log.error(error, 'Organization list failed');
       return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not load your organizations.' });
@@ -532,8 +558,10 @@ export function buildApp() {
       const invitation = await createInvitation(createAuthenticatedClient(auth.accessToken!), (request.params as { organizationId: string }).organizationId, input.email);
       return reply.code(201).send({ invitation, emailDelivered: true });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to invite an employee.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_INVITATION', message: 'Enter a valid employee email address.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended and cannot send invitations.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to invite employees to this organization.' });
       if (error instanceof Error && error.message === 'INVITATION_EMAIL_NOT_CONFIGURED') {
         const invitation = (error.cause as { invitation?: { id: string; email: string; expiresAt: string } } | undefined)?.invitation;
@@ -580,6 +608,7 @@ export function buildApp() {
       const invitation = await getInvitationByToken(createAuthenticatedClient(auth.accessToken!), token);
       return reply.send({ invitation });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to review this invitation.' });
       if (error instanceof z.ZodError || error instanceof Error && error.message.includes('INVITATION_INVALID')) return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation is invalid, expired, or already used.' });
       request.log.error(error, 'Invitation validation failed');
@@ -594,8 +623,10 @@ export function buildApp() {
       const result = await acceptInvitation(createAuthenticatedClient(auth.accessToken!), input.token);
       return reply.code(200).send(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in before accepting an invitation.' });
       if (error instanceof Error && error.message.includes('INVITATION_EMAIL_MISMATCH')) return reply.code(403).send({ error: 'INVITATION_EMAIL_MISMATCH', message: 'Sign in with the email address this invitation was sent to.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended and cannot accept new members.' });
       if (error instanceof z.ZodError || (error instanceof Error && error.message.includes('INVITATION_INVALID'))) return reply.code(400).send({ error: 'INVITATION_INVALID', message: 'This invitation is invalid or has expired.' });
       request.log.error(error, 'Invitation acceptance failed');
       return reply.code(500).send({ error: 'INVITATION_UNAVAILABLE', message: 'We could not accept the invitation.' });
@@ -610,11 +641,13 @@ export function buildApp() {
       const result = await removeOrganizationMember(createAuthenticatedClient(auth.accessToken!), organizationId, userId);
       return reply.send({ member: result });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to manage organization employees.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_MEMBER', message: 'Choose a valid employee.' });
       if (error instanceof Error && error.message === 'CANNOT_REMOVE_SELF') return reply.code(400).send({ error: 'CANNOT_REMOVE_SELF', message: 'You cannot remove yourself from the organization.' });
       if (error instanceof Error && error.message === 'LAST_ADMIN') return reply.code(409).send({ error: 'LAST_ADMIN', message: 'Promote another administrator before removing the last admin.' });
       if (error instanceof Error && error.message === 'MEMBER_NOT_FOUND') return reply.code(404).send({ error: 'MEMBER_NOT_FOUND', message: 'That employee is not in this organization.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended and cannot change membership.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to manage this organization.' });
       request.log.error(error, 'Member removal failed');
       return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not remove this employee.' });
@@ -627,7 +660,9 @@ export function buildApp() {
       const dashboard = await getOrganizationDashboard(createAuthenticatedClient(auth.accessToken!), (request.params as { organizationId: string }).organizationId);
       return reply.send({ dashboard });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view organization data.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to view this organization.' });
       request.log.error(error, 'Organization dashboard failed');
       return reply.code(500).send({ error: 'ORGANIZATION_UNAVAILABLE', message: 'We could not load the organization dashboard.' });
@@ -647,7 +682,9 @@ export function buildApp() {
       const report = await getOrganizationReport(client, organizationId);
       return reply.code(201).send({ report });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate organization reports.' });
+      if (error instanceof Error && error.message === 'ORGANIZATION_SUSPENDED') return reply.code(403).send({ error: 'ORGANIZATION_SUSPENDED', message: 'This organization is suspended and cannot generate reports.' });
       if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'You do not have permission to generate this report.' });
       request.log.error(error, 'Organization report failed');
       return reply.code(500).send({ error: 'REPORT_UNAVAILABLE', message: 'We could not generate the organization report.' });
@@ -663,6 +700,7 @@ export function buildApp() {
       const scenario = await generateScenario(userClient, data.user!, input);
       return reply.code(201).send({ scenario });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate training content.' });
       if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'AI scenario generation is not configured.' });
       if (error instanceof z.ZodError || error instanceof SyntaxError) return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The generated scenario could not be validated. Please try again.' });
@@ -686,6 +724,7 @@ export function buildApp() {
           request.log.warn(refundError, 'Failed to refund AI follow-up reservation after explanation error');
         });
       }
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to request an explanation.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION_CONTEXT', message: 'A valid scenario answer is required for a focused explanation.' });
       if (error instanceof Error && error.message === 'AI_FOLLOWUP_DAILY_LIMIT') return reply.code(429).send({ error: 'AI_FOLLOWUP_DAILY_LIMIT', message: 'You have reached today’s limit of 10 follow-up questions. Try again tomorrow.' });
@@ -706,6 +745,7 @@ export function buildApp() {
       const scenarios = await getOnboardingAssessment(createAuthenticatedClient(auth.accessToken!));
       return reply.send({ scenarios });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to start your assessment.' });
       request.log.error(error, 'Onboarding assessment lookup failed');
       return reply.code(500).send({ error: 'ASSESSMENT_UNAVAILABLE', message: 'We could not load the onboarding assessment.' });
@@ -721,6 +761,7 @@ export function buildApp() {
       const profile = await submitAssessment(userClient, data.user!, input);
       return reply.code(201).send({ profile });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to submit your assessment.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ASSESSMENT', message: 'Please complete every assessment question.' });
       request.log.error(error, 'Assessment submission failed');
@@ -735,6 +776,7 @@ export function buildApp() {
       if (error) throw error;
       return reply.send({ profile: data });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your risk profile.' });
       request.log.error(error, 'Risk profile lookup failed');
       return reply.code(500).send({ error: 'RISK_PROFILE_UNAVAILABLE', message: 'We could not load your risk profile.' });
@@ -748,6 +790,7 @@ export function buildApp() {
       if (error) throw error;
       return reply.send({ profile: data });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your profile.' });
       request.log.error(error, 'Profile lookup failed');
       return reply.code(500).send({ error: 'PROFILE_UNAVAILABLE', message: 'We could not load your profile.' });
@@ -770,6 +813,7 @@ export function buildApp() {
       if (error) throw error;
       return reply.send({ profile: data });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to update your settings.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_PROFILE', message: 'Enter a valid name and choose a supported language.' });
       request.log.error(error, 'Profile update failed');
@@ -787,6 +831,7 @@ export function buildApp() {
       const result = await recordTrainingAnswer(userClient, data.user!, scenarioSlug, input);
       return reply.code(201).send(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to save training progress.' });
       if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ANSWER', message: 'Choose one of the available responses.' });
@@ -801,6 +846,7 @@ export function buildApp() {
       const summary = await getTrainingSummary(createAuthenticatedClient(auth.accessToken!), auth.userId!);
       return reply.send(summary);
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view training progress.' });
       request.log.error(error, 'Training progress lookup failed');
       return reply.code(500).send({ error: 'TRAINING_PROGRESS_UNAVAILABLE', message: 'We could not load your training progress.' });
@@ -822,6 +868,7 @@ export function buildApp() {
       const certificates = await listUserCertificates(client, auth.userId!);
       return reply.send({ certificates });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view your certificates.' });
       request.log.error(error, 'Certificate listing failed');
       return reply.code(500).send({ error: 'CERTIFICATES_UNAVAILABLE', message: 'We could not load your certificates.' });
@@ -834,6 +881,7 @@ export function buildApp() {
       const { data } = await createAuthenticatedClient(auth.accessToken!).auth.getUser(auth.accessToken);
       return reply.send(await startCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!));
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to start the certification assessment.' });
       if (error instanceof Error && error.message === 'TRAINING_REQUIRED') return reply.code(403).send({ error: 'TRAINING_REQUIRED', message: 'Complete every published training module before starting the certification assessment.', gate: CERTIFICATION_GATE });
       if (error instanceof Error && error.message === 'CERTIFICATION_QUESTION_POOL_TOO_SMALL') return reply.code(503).send({ error: 'CERTIFICATION_UNAVAILABLE', message: 'The certification question bank is not ready yet.' });
@@ -849,6 +897,7 @@ export function buildApp() {
       const { data } = await createAuthenticatedClient(auth.accessToken!).auth.getUser(auth.accessToken);
       return reply.send(await submitCertificationAssessment(createAuthenticatedClient(auth.accessToken!), data.user!, input));
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to submit the certification assessment.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CERTIFICATION', message: `Answer all ${CERTIFICATION_GATE.questionCount} certification questions.` });
       if (error instanceof Error && error.message === 'CERTIFICATION_EXPIRED') return reply.code(400).send({ error: 'CERTIFICATION_EXPIRED', message: `Your ${CERTIFICATION_GATE.timeLimitMinutes}-minute assessment expired. Please start again.` });
@@ -876,6 +925,7 @@ export function buildApp() {
       const modules = await listPublishedModules(createAuthenticatedClient(auth.accessToken!));
       return reply.send({ modules });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view training modules.' });
       request.log.error(error, 'Training modules lookup failed');
       return reply.code(500).send({ error: 'TRAINING_MODULES_UNAVAILABLE', message: 'We could not load the available training modules.' });
@@ -889,6 +939,7 @@ export function buildApp() {
       const scenario = await getScenario(createAuthenticatedClient(auth.accessToken!), scenarioSlug);
       return reply.send({ scenario });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this scenario.' });
       if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This training scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid training scenario.' });
@@ -904,6 +955,7 @@ export function buildApp() {
       const scenarios = await listAiPracticeScenarios(createAuthenticatedClient(auth.accessToken!), auth.userId!, moduleSlug);
       return reply.send({ scenarios });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view AI practice scenarios.' });
       if (error instanceof Error && error.message === 'MODULE_UNAVAILABLE') return reply.code(404).send({ error: 'MODULE_NOT_FOUND', message: 'This training module is not available.' });
       request.log.error(error, 'AI practice list failed');
@@ -921,6 +973,7 @@ export function buildApp() {
       const scenario = await generateAiPracticeScenario(userClient, data.user!, body);
       return reply.code(201).send({ scenario });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate AI practice scenarios.' });
       if (error instanceof Error && error.message === 'MANUAL_SCENARIOS_INCOMPLETE') return reply.code(403).send({ error: 'MANUAL_SCENARIOS_INCOMPLETE', message: 'Complete every manually written scenario in this module before unlocking AI practice.' });
       if (error instanceof Error && error.message === 'MODULE_UNAVAILABLE') return reply.code(404).send({ error: 'MODULE_NOT_FOUND', message: 'This training module is not available.' });
@@ -938,6 +991,7 @@ export function buildApp() {
       const scenario = await getAiPracticeScenario(createAuthenticatedClient(auth.accessToken!), auth.userId!, scenarioSlug);
       return reply.send({ scenario });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to view this practice scenario.' });
       if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This AI practice scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_SCENARIO', message: 'Choose a valid AI practice scenario.' });
@@ -956,6 +1010,7 @@ export function buildApp() {
       const result = await recordAiPracticeAnswer(userClient, data.user!, scenarioSlug, input);
       return reply.code(201).send(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to save AI practice progress.' });
       if (error instanceof Error && error.message === 'SCENARIO_UNAVAILABLE') return reply.code(404).send({ error: 'SCENARIO_NOT_FOUND', message: 'This AI practice scenario is not available.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_ANSWER', message: 'Choose one of the available responses.' });

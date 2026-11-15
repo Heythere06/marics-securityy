@@ -124,12 +124,20 @@ function App() {
       setSessionExpiredNotice('Your session expired. Please sign in again.');
       void supabase?.auth.signOut();
     };
+    const onSuspended = () => {
+      setSession(null);
+      setAuthError(null);
+      setSessionExpiredNotice('This account has been suspended. Contact your administrator or MARICS support.');
+      void supabase?.auth.signOut();
+    };
     window.addEventListener('marics:unauthorized', onUnauthorized);
+    window.addEventListener('marics:suspended', onSuspended);
     return () => {
       active = false;
       window.clearTimeout(authTimeout);
       listener.subscription.unsubscribe();
       window.removeEventListener('marics:unauthorized', onUnauthorized);
+      window.removeEventListener('marics:suspended', onSuspended);
     };
   }, [authRetry]);
 
@@ -140,7 +148,10 @@ function App() {
     const savedLanguage = session.user.user_metadata?.preferred_language as Language | undefined;
     if (savedLanguage === 'en' || savedLanguage === 'af' || savedLanguage === 'pt') setLanguage(savedLanguage);
     setDisplayName(fallback);
+    let profileLoadSettled = false;
     const onboardingTimeout = window.setTimeout(() => {
+      if (profileLoadSettled) return;
+      profileLoadSettled = true;
       setAssessmentLoading(false);
       setProfileReady(true);
       setAssessmentError('Your workspace took too long to respond. Check the API connection and retry.');
@@ -149,24 +160,40 @@ function App() {
       try {
         const invitationToken = window.localStorage.getItem('marics_invitation_token');
         if (invitationToken) {
-          try {
-            await acceptOrganizationInvitation(session.access_token, invitationToken);
+          if (!/^[a-f0-9]{64}$/i.test(invitationToken)) {
             window.localStorage.removeItem('marics_invitation_token');
-            setInviteNotice('You joined your organization. Your employee workspace is ready.');
-          } catch (error) {
-            const detail = error instanceof Error ? error.message : 'We could not accept your organization invitation.';
-            setInviteNotice(detail);
-            if (/invalid|expired|mismatch|already|used/i.test(detail)) {
+          } else {
+            try {
+              await acceptOrganizationInvitation(session.access_token, invitationToken);
               window.localStorage.removeItem('marics_invitation_token');
+              setInviteNotice('You joined your organization. Your employee workspace is ready.');
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : 'We could not accept your organization invitation.';
+              const code = error instanceof ApiError ? error.code : '';
+              setInviteNotice(detail);
+              if (
+                ['INVITATION_INVALID', 'INVITATION_EMAIL_MISMATCH', 'ORGANIZATION_SUSPENDED'].includes(code)
+                || /invalid|expired|mismatch|already|used|suspended/i.test(detail)
+              ) {
+                window.localStorage.removeItem('marics_invitation_token');
+              }
             }
           }
         }
-        const [profile, memberships, savedRiskProfile, summary] = await Promise.all([
+        const [profileResult, membershipsResult, riskResult, summaryResult] = await Promise.allSettled([
           getProfile(session.access_token),
-          getOrganizations(session.access_token).catch(() => [] as Array<{ id: string; name: string; isAdmin: boolean }>),
-          getRiskProfile(session.access_token).catch(() => null),
-          getTrainingSummary(session.access_token).catch(() => null),
+          getOrganizations(session.access_token),
+          getRiskProfile(session.access_token),
+          getTrainingSummary(session.access_token),
         ]);
+        if (membershipsResult.status === 'rejected') {
+          setSaveError(membershipsResult.reason instanceof Error ? membershipsResult.reason.message : 'Your organizations could not be loaded.');
+        }
+        if (profileResult.status === 'rejected') throw profileResult.reason;
+        const profile = profileResult.value;
+        const memberships = membershipsResult.status === 'fulfilled' ? membershipsResult.value : [];
+        const savedRiskProfile = riskResult.status === 'fulfilled' ? riskResult.value : null;
+        const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
         if (profile?.full_name) setDisplayName(profile.full_name);
         if (profile?.preferred_language === 'en' || profile?.preferred_language === 'af' || profile?.preferred_language === 'pt') setLanguage(profile.preferred_language);
         const nextRole = profile?.role ?? 'individual';
@@ -203,11 +230,14 @@ function App() {
           }
         }
       } catch (error) {
-        setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.');
+        if (!profileLoadSettled) setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.');
       } finally {
-        window.clearTimeout(onboardingTimeout);
-        setAssessmentLoading(false);
-        setProfileReady(true);
+        if (!profileLoadSettled) {
+          profileLoadSettled = true;
+          window.clearTimeout(onboardingTimeout);
+          setAssessmentLoading(false);
+          setProfileReady(true);
+        }
       }
     };
     void loadProfileAndOnboarding();
@@ -668,7 +698,7 @@ function AuthScreen({ configured, language, setLanguage, onBack, initialMessage 
   const [message, setMessage] = useState<string | null>(initialMessage);
   const [busy, setBusy] = useState(false);
   const [pendingVerification, setPendingVerification] = useState(false);
-  const [invitePreview, setInvitePreview] = useState<{ organizationName: string; email: string; isExpired: boolean; isUsed: boolean } | null>(null);
+  const [invitePreview, setInvitePreview] = useState<{ organizationName: string; isExpired: boolean; isUsed: boolean; status: 'valid' | 'expired' | 'used' } | null>(null);
   const [invitePreviewError, setInvitePreviewError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -679,21 +709,29 @@ function AuthScreen({ configured, language, setLanguage, onBack, initialMessage 
   }, [initialMessage]);
 
   useEffect(() => {
+    const storedToken = window.localStorage.getItem('marics_invitation_token');
+    if (storedToken && !/^[a-f0-9]{64}$/i.test(storedToken)) {
+      window.localStorage.removeItem('marics_invitation_token');
+    }
     const invitationToken = new URLSearchParams(window.location.search).get('invite')
       ?? window.localStorage.getItem('marics_invitation_token');
-    if (!invitationToken || !/^[a-f0-9]{64}$/i.test(invitationToken)) return;
+    if (!invitationToken) return;
+    if (!/^[a-f0-9]{64}$/i.test(invitationToken)) {
+      window.localStorage.removeItem('marics_invitation_token');
+      setInvitePreviewError('This invitation link is malformed. Ask your administrator for a new link.');
+      return;
+    }
     window.localStorage.setItem('marics_invitation_token', invitationToken);
     setMode('sign-up');
     setAccountType('individual');
     void previewInvitation(invitationToken)
       .then((invitation) => {
         setInvitePreview(invitation);
-        setEmail(invitation.email);
-        if (invitation.isExpired) {
+        if (invitation.isExpired || invitation.status === 'expired') {
           setInvitePreviewError('This invitation has expired. Ask your administrator for a new link.');
           window.localStorage.removeItem('marics_invitation_token');
           setMode('sign-in');
-        } else if (invitation.isUsed) {
+        } else if (invitation.isUsed || invitation.status === 'used') {
           setInvitePreviewError('This invitation was already accepted. Sign in with the invited email instead.');
           window.localStorage.removeItem('marics_invitation_token');
           setMode('sign-in');
@@ -765,8 +803,8 @@ function AuthScreen({ configured, language, setLanguage, onBack, initialMessage 
     setBusy(false);
   };
 
-  const joiningOrg = Boolean(invitePreview && !invitePreview.isExpired && !invitePreview.isUsed);
-  return <main className="auth-shell"><section className="auth-panel"><div className="brand auth-brand">MARICS<span>/ SECURITY</span></div><p className="eyebrow">Human risk intelligence platform</p><h1>{pendingVerification ? 'Verify your email.' : mode === 'sign-in' ? 'Welcome back.' : mode === 'reset' ? 'Reset your password.' : joiningOrg ? `Join ${invitePreview!.organizationName}.` : 'Build safer habits.'}</h1><p className="lede">{pendingVerification ? (joiningOrg ? `Confirm ${invitePreview!.email} to unlock your ${invitePreview!.organizationName} employee workspace.` : 'MARICS keeps accounts closed until the email address is confirmed. That protects learner progress and organization invitations.') : joiningOrg ? 'Create or sign in with the invited work email. Your individual answers stay private from administrators.' : 'Your private workspace for practicing the decisions attackers try to rush.'}</p>{(invitePreview || invitePreviewError) && <div className={`invite-banner ${invitePreviewError ? 'error' : ''}`} role="status"><p className="card-kicker">ORGANIZATION INVITATION</p>{invitePreview && <h2>{invitePreview.organizationName}</h2>}{invitePreview && <p>Invited email: <strong>{invitePreview.email}</strong></p>}{invitePreviewError ? <p>{invitePreviewError}</p> : <p>By continuing you confirm this is your work email and you accept that your employer can see aggregate progress only.</p>}</div>}{!configured ? <div className="auth-message" role="alert"><strong>Configuration required.</strong> Supabase is not configured for this frontend. Set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, then restart the dev server. Sign-in is blocked until those values are present.</div> : <form onSubmit={submit}>{mode === 'sign-up' && !pendingVerification && <><label>Name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label><label>Country or region<input value={countryCode} onChange={event => setCountryCode(event.target.value.toUpperCase())} maxLength={2} placeholder="NA" required /></label><label>Preferred language<select value={language} onChange={event => setLanguage(event.target.value)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label>{!joiningOrg && <><label>Account type<select value={accountType} onChange={event => setAccountType(event.target.value)}><option value="individual">Individual learner</option><option value="organization">Organization (verify email, complete assessment, then create a workspace)</option></select></label><p className="lede">Organization signup stays a learner account until you create the workspace. The signup dropdown never grants administrator access.</p></>}</>}<label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} required readOnly={joiningOrg} /></label>{mode !== 'reset' && <label>Password<input type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} required /></label>}<button type="submit" className="primary auth-submit" disabled={busy || (mode === 'sign-up' && Boolean(invitePreviewError))}>{busy ? 'Working...' : mode === 'sign-in' ? 'Sign in' : mode === 'reset' ? 'Send reset link' : joiningOrg ? 'Create employee account' : 'Create account'} <b>&#8594;</b></button>{message && <p className="auth-message" role="status">{message}</p>}{(pendingVerification || /verify|verification/i.test(message ?? '')) && <button type="button" className="auth-switch" onClick={() => void resendVerification()} disabled={busy || !email}>Resend verification email</button>}</form>}{configured && <div className="auth-links"><button type="button" className="auth-switch" onClick={() => { setPendingVerification(false); setMessage(null); setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); }}>{mode === 'sign-in' ? 'Need an account? Sign up' : 'Back to sign in'}</button>{mode === 'sign-in' && <button type="button" className="auth-switch" onClick={() => { setPendingVerification(false); setMode('reset'); }}>Forgot password?</button>}{onBack && <button type="button" className="auth-switch" onClick={onBack}>Back to site</button>}</div>}{!configured && onBack && <div className="auth-links"><button type="button" className="auth-switch" onClick={onBack}>Back to site</button></div>}</section></main>;
+  const joiningOrg = Boolean(invitePreview && !invitePreview.isExpired && !invitePreview.isUsed && invitePreview.status === 'valid');
+  return <main className="auth-shell"><section className="auth-panel"><div className="brand auth-brand">MARICS<span>/ SECURITY</span></div><p className="eyebrow">Human risk intelligence platform</p><h1>{pendingVerification ? 'Verify your email.' : mode === 'sign-in' ? 'Welcome back.' : mode === 'reset' ? 'Reset your password.' : joiningOrg ? `Join ${invitePreview!.organizationName}.` : 'Build safer habits.'}</h1><p className="lede">{pendingVerification ? (joiningOrg ? `Confirm the invited work email to unlock your ${invitePreview!.organizationName} employee workspace.` : 'MARICS keeps accounts closed until the email address is confirmed. That protects learner progress and organization invitations.') : joiningOrg ? 'Create or sign in with the invited work email. Your individual answers stay private from administrators.' : 'Your private workspace for practicing the decisions attackers try to rush.'}</p>{(invitePreview || invitePreviewError) && <div className={`invite-banner ${invitePreviewError ? 'error' : ''}`} role="status"><p className="card-kicker">ORGANIZATION INVITATION</p>{invitePreview && <h2>{invitePreview.organizationName}</h2>}{invitePreview && !invitePreviewError && <p>Use the work email this invitation was sent to. The invite address is confirmed only after you sign in.</p>}{invitePreviewError ? <p>{invitePreviewError}</p> : <p>By continuing you confirm this is your work email and you accept that your employer can see aggregate progress only.</p>}</div>}{!configured ? <div className="auth-message" role="alert"><strong>Configuration required.</strong> Supabase is not configured for this frontend. Set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, then restart the dev server. Sign-in is blocked until those values are present.</div> : <form onSubmit={submit}>{mode === 'sign-up' && !pendingVerification && <><label>Name<input value={fullName} onChange={event => setFullName(event.target.value)} required /></label><label>Country or region<input value={countryCode} onChange={event => setCountryCode(event.target.value.toUpperCase())} maxLength={2} placeholder="NA" required /></label><label>Preferred language<select value={language} onChange={event => setLanguage(event.target.value)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Portuguese</option></select></label>{!joiningOrg && <><label>Account type<select value={accountType} onChange={event => setAccountType(event.target.value)}><option value="individual">Individual learner</option><option value="organization">Organization (verify email, complete assessment, then create a workspace)</option></select></label><p className="lede">Organization signup stays a learner account until you create the workspace. The signup dropdown never grants administrator access.</p></>}</>}<label>Email<input type="email" value={email} onChange={event => setEmail(event.target.value)} required autoComplete="email" /></label>{mode !== 'reset' && <label>Password<input type="password" minLength={8} value={password} onChange={event => setPassword(event.target.value)} required /></label>}<button type="submit" className="primary auth-submit" disabled={busy || (mode === 'sign-up' && Boolean(invitePreviewError))}>{busy ? 'Working...' : mode === 'sign-in' ? 'Sign in' : mode === 'reset' ? 'Send reset link' : joiningOrg ? 'Create employee account' : 'Create account'} <b>&#8594;</b></button>{message && <p className="auth-message" role="status">{message}</p>}{(pendingVerification || /verify|verification/i.test(message ?? '')) && <button type="button" className="auth-switch" onClick={() => void resendVerification()} disabled={busy || !email}>Resend verification email</button>}</form>}{configured && <div className="auth-links"><button type="button" className="auth-switch" onClick={() => { setPendingVerification(false); setMessage(null); setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in'); }}>{mode === 'sign-in' ? 'Need an account? Sign up' : 'Back to sign in'}</button>{mode === 'sign-in' && <button type="button" className="auth-switch" onClick={() => { setPendingVerification(false); setMode('reset'); }}>Forgot password?</button>}{onBack && <button type="button" className="auth-switch" onClick={onBack}>Back to site</button>}</div>}{!configured && onBack && <div className="auth-links"><button type="button" className="auth-switch" onClick={onBack}>Back to site</button></div>}</section></main>;
 }
 
 function formatAuthError(error: { message: string; code?: string; status?: number }) {

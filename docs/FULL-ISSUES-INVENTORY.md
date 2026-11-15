@@ -101,6 +101,17 @@
 | FE-042 admin role promote | **Fixed** — stronger confirm for privileged roles |
 | FE-011 missing Supabase env | **Fixed** — blocking config alert; no silent auth no-op |
 
+### Batch 10 status (Auth enforcement + invite hygiene) — landed in repo
+
+| ID | Status |
+|----|--------|
+| BE-024 invite preview PII | **Fixed** — public preview returns org/status only |
+| BE-027 account suspended | **Fixed** — `ACCOUNT_SUSPENDED` 403 + frontend notice |
+| BE-028 org suspension | **Fixed** — org admin APIs + accept blocked when suspended |
+| FE-006 profile load timeout race | **Fixed** — settle flag so timeout cannot clobber success |
+| FE-007 org load swallows errors | **Fixed** — surface org load failures |
+| FE-012/016 invite token hygiene | **Fixed** — clear malformed/permanent-failure tokens |
+
 ### Severity key
 
 | Level | Meaning |
