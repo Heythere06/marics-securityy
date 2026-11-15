@@ -125,6 +125,16 @@
       "assistant": "Treinador de IA",
       "progress": "Progresso",
       "certificates": "Certificados"
-    }
+    },
+    "settingsEyebrow": "Conta / preferências",
+    "settingsTitle": "Definições",
+    "settingsDetail": "Gira o seu perfil, idioma e segurança de início de sessão.",
+    "profile": "Perfil",
+    "email": "Endereço de e-mail",
+    "displayName": "Nome apresentado",
+    "preferredLanguage": "Idioma preferido",
+    "saveProfile": "Guardar perfil",
+    "saving": "A guardar...",
+    "profileSaved": "Idioma e perfil atualizados."
   }
 }

@@ -125,6 +125,16 @@
       "assistant": "KI-afrigter",
       "progress": "Vordering",
       "certificates": "Sertifikate"
-    }
+    },
+    "settingsEyebrow": "Rekening / voorkeure",
+    "settingsTitle": "Instellings",
+    "settingsDetail": "Bestuur jou profiel, taal en aanmeldsekuriteit.",
+    "profile": "Profiel",
+    "email": "E-posadres",
+    "displayName": "Vertoonnaam",
+    "preferredLanguage": "Voorkeurtaal",
+    "saveProfile": "Stoor profiel",
+    "saving": "Stoor...",
+    "profileSaved": "Taal en profiel is bygewerk."
   }
 }

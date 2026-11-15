@@ -125,6 +125,16 @@
       "assistant": "AI coach",
       "progress": "Progress",
       "certificates": "Certificates"
-    }
+    },
+    "settingsEyebrow": "Account / preferences",
+    "settingsTitle": "Settings",
+    "settingsDetail": "Manage your profile, language, and sign-in security.",
+    "profile": "Profile",
+    "email": "Email address",
+    "displayName": "Display name",
+    "preferredLanguage": "Preferred language",
+    "saveProfile": "Save profile",
+    "saving": "Saving...",
+    "profileSaved": "Language and profile updated."
   }
 }
