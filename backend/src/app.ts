@@ -694,14 +694,16 @@ export function buildApp() {
   app.post('/api/ai/generate-scenario', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
       const auth = await requireUser(request);
-      const input = scenarioGenerationSchema.parse(request.body);
       const userClient = createAuthenticatedClient(auth.accessToken!);
+      await requireMaricsAdmin(userClient);
+      const input = scenarioGenerationSchema.parse(request.body);
       const { data } = await userClient.auth.getUser(auth.accessToken);
       const scenario = await generateScenario(userClient, data.user!, input);
       return reply.code(201).send({ scenario });
     } catch (error) {
       if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to generate training content.' });
+      if (error instanceof Error && error.message.includes('FORBIDDEN')) return reply.code(403).send({ error: 'FORBIDDEN', message: 'Only MARICS administrators can generate draft scenarios.' });
       if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'AI scenario generation is not configured.' });
       if (error instanceof z.ZodError || error instanceof SyntaxError) return reply.code(502).send({ error: 'AI_INVALID_OUTPUT', message: 'The generated scenario could not be validated. Please try again.' });
       request.log.error(error, 'AI scenario generation failed');

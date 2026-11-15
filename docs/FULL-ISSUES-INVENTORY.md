@@ -112,6 +112,17 @@
 | FE-007 org load swallows errors | **Fixed** — surface org load failures |
 | FE-012/016 invite token hygiene | **Fixed** — clear malformed/permanent-failure tokens |
 
+### Batch 11 status (Training integrity + onboarding hygiene) — landed in repo
+
+| ID | Status |
+|----|--------|
+| BE-019 completion = attempted | **Fixed** — require correct answer per scenario |
+| BE-021 AI overwrites risk profile | **Fixed** — AI practice no longer mutates baseline scores |
+| BE-023 generate-scenario ungated | **Fixed** — MARICS admin only |
+| FE-017 quiz sessionStorage early write | **Fixed** — no mid-quiz persist; clear after save |
+| FE-018 assessment save toast-only | **Fixed** — inline `.assessment-submit-error` |
+| FE-020 retake contaminated storage | **Fixed** — clear onboarding key on retake |
+
 ### Severity key
 
 | Level | Meaning |

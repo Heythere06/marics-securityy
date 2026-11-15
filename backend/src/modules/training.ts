@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { requireScoringClient } from '../lib/supabase.js';
-import { awardModuleCertificate, hasAttemptedEveryScenario } from './certificates.js';
+import { awardModuleCertificate, hasCorrectlyAnsweredEveryScenario } from './certificates.js';
 
 export const trainingAnswerSchema = z.object({ optionKey: z.enum(['A', 'B', 'C', 'D']) });
 
@@ -110,9 +110,9 @@ export async function recordTrainingAnswer(client: SupabaseClient, user: User, s
   const { data: moduleScenarios, error: moduleScenariosError } = await publicContentClient(client).from('scenarios').select('id').eq('module_id', scenario.module_id);
   if (moduleScenariosError) throw moduleScenariosError;
   const scenarioIds = moduleScenarios.map((item) => item.id);
-  const { data: attemptsForModule, error: attemptsForModuleError } = await scoring.from('training_attempts').select('scenario_id').eq('user_id', user.id).in('scenario_id', scenarioIds);
+  const { data: attemptsForModule, error: attemptsForModuleError } = await scoring.from('training_attempts').select('scenario_id, is_correct').eq('user_id', user.id).in('scenario_id', scenarioIds);
   if (attemptsForModuleError) throw attemptsForModuleError;
-  const moduleCompleted = hasAttemptedEveryScenario(scenarioIds, attemptsForModule.map((attempt) => attempt.scenario_id));
+  const moduleCompleted = hasCorrectlyAnsweredEveryScenario(scenarioIds, attemptsForModule);
   const { data: currentProgress, error: currentProgressError } = await scoring.from('training_progress').select('scenarios_attempted, scenarios_correct, completed_at').eq('user_id', user.id).eq('module_id', scenario.module_id).maybeSingle();
   if (currentProgressError) throw currentProgressError;
   const completedAt = moduleCompleted ? currentProgress?.completed_at ?? new Date().toISOString() : null;
@@ -151,12 +151,18 @@ export async function getTrainingSummary(client: SupabaseClient, userId: string)
   const moduleByScenarioId = new Map<string, string>();
   for (const module of modules) for (const scenario of Array.isArray(module.scenarios) ? module.scenarios : []) moduleByScenarioId.set(scenario.id, module.id);
   const attemptedByModule = new Map<string, Set<string>>();
+  const correctByModule = new Map<string, Set<string>>();
   for (const attempt of attempts) {
     const moduleId = moduleByScenarioId.get(attempt.scenario_id);
     if (!moduleId) continue;
     const attempted = attemptedByModule.get(moduleId) ?? new Set<string>();
     attempted.add(attempt.scenario_id);
     attemptedByModule.set(moduleId, attempted);
+    if (attempt.is_correct) {
+      const correct = correctByModule.get(moduleId) ?? new Set<string>();
+      correct.add(attempt.scenario_id);
+      correctByModule.set(moduleId, correct);
+    }
   }
   const moduleProgress = modules.map((module) => {
     const saved = progressByModule.get(module.id) as {
@@ -168,14 +174,15 @@ export async function getTrainingSummary(client: SupabaseClient, userId: string)
     } | undefined;
     const scenarioCount = Array.isArray(module.scenarios) ? module.scenarios.length : 0;
     const scenariosAttempted = attemptedByModule.get(module.id)?.size ?? 0;
+    const scenariosCorrectLive = correctByModule.get(module.id)?.size ?? 0;
     return {
       id: module.id,
       slug: module.slug,
       title: module.title,
       scenarioCount,
       scenariosAttempted,
-      scenariosCorrect: saved?.scenarios_correct ?? 0,
-      completed: scenarioCount > 0 && scenariosAttempted >= scenarioCount,
+      scenariosCorrect: saved?.scenarios_correct ?? scenariosCorrectLive,
+      completed: Boolean(saved?.completed_at) || (scenarioCount > 0 && scenariosCorrectLive >= scenarioCount),
       aiScenariosAttempted: saved?.ai_scenarios_attempted ?? 0,
       aiScenariosCorrect: saved?.ai_scenarios_correct ?? 0,
       riskDimensions: Array.isArray(module.scenarios) ? module.scenarios.flatMap((scenario) => scenario.risk_dimensions ?? []) : [],

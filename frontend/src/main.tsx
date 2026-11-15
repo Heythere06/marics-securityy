@@ -215,19 +215,8 @@ function App() {
           const scenarios = await getOnboardingAssessment(session.access_token);
           if (scenarios.length !== 10) throw new Error(`The onboarding assessment returned ${scenarios.length} scenarios; 10 are required. Apply migration 202609190011_onboarding_assessment.sql.`);
           setOnboardingScenarios(scenarios);
-          const onboardingKey = `marics_onboarding_${session.user.id}`;
-          const saved = window.sessionStorage.getItem(onboardingKey);
-          if (saved) {
-            try {
-              const parsed = JSON.parse(saved) as { answers: Array<{ scenarioSlug: string; optionKey: 'A' | 'B' | 'C' }>; index: number };
-              if (Array.isArray(parsed.answers)) {
-                setAssessmentAnswers(parsed.answers);
-                setAssessmentIndex(Math.min(parsed.index ?? parsed.answers.length, Math.max(scenarios.length - 1, 0)));
-              }
-            } catch {
-              window.sessionStorage.removeItem(onboardingKey);
-            }
-          }
+          // Do not restore mid-quiz answers from sessionStorage — they can desync from the server.
+          window.sessionStorage.removeItem(`marics_onboarding_${session.user.id}`);
         }
       } catch (error) {
         if (!profileLoadSettled) setAssessmentError(error instanceof Error ? error.message : 'Your onboarding assessment could not be loaded.');
@@ -359,7 +348,7 @@ function App() {
     if (assessmentIndex < onboardingScenarios.length - 1) {
       setAssessmentAnswers(nextAnswers);
       setSelectedOptionKey(null);
-      if (session) window.sessionStorage.setItem(`marics_onboarding_${session.user.id}`, JSON.stringify({ answers: nextAnswers, index: assessmentIndex + 1 }));
+      setSaveError(null);
       setAssessmentIndex(assessmentIndex + 1);
       return;
     }
@@ -383,11 +372,13 @@ function App() {
 
   const beginAssessment = async () => {
     if (!session) return;
+    window.sessionStorage.removeItem(`marics_onboarding_${session.user.id}`);
     setAssessmentIndex(0);
     setAssessmentAnswers([]);
     setSelectedOptionKey(null);
     setAssessmentLoading(true);
     setAssessmentError(null);
+    setSaveError(null);
     setRetakingAssessment(true);
     setView('assessment');
     try {
@@ -541,7 +532,7 @@ function App() {
         const recommended = trainingSummary.recommendation?.slug;
         if (recommended) void selectTrainingModule(recommended);
         navigate('training');
-      }} onContinue={() => navigate('overview')} /> : <AssessmentView language={language} t={t} loading={assessmentLoading} saving={assessmentSaving} error={assessmentError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={setSelectedOptionKey} onSubmit={submitAssessment} openingQuiz={retakingAssessment} onRetry={() => { setAssessmentError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your assessment could not be loaded.'); setAssessmentLoading(false); }); }} />)}
+      }} onContinue={() => navigate('overview')} /> : <AssessmentView language={language} t={t} loading={assessmentLoading} saving={assessmentSaving} error={assessmentError} saveError={saveError} scenario={currentAssessmentScenario} index={assessmentIndex} total={onboardingScenarios.length} selectedOptionKey={selectedOptionKey} onSelect={(optionKey) => { setSaveError(null); setSelectedOptionKey(optionKey); }} onSubmit={submitAssessment} openingQuiz={retakingAssessment} onRetry={() => { setAssessmentError(null); setSaveError(null); setAssessmentLoading(true); getOnboardingAssessment(session.access_token).then((scenarios) => { setOnboardingScenarios(scenarios); setAssessmentLoading(false); }).catch((error) => { setAssessmentError(error instanceof Error ? error.message : 'Your assessment could not be loaded.'); setAssessmentLoading(false); }); }} />)}
       {view === 'training' && canTrain && <ModuleTrainingView language={language} modules={trainingModules} summary={trainingSummary} selectedModuleSlug={selectedTrainingModuleSlug} onModuleSelect={selectTrainingModule} selectedScenarioSlug={selectedScenarioSlug} onScenarioSelect={(scenarioSlug) => void selectTrainingScenario(scenarioSlug, selectedTrainingModuleSlug ?? undefined)} onNextScenario={goToNextTrainingScenario} onRetryCatalog={() => {
         setTrainingError(null);
         setTrainingLoading(true);
@@ -899,7 +890,7 @@ function Sidebar({ role, accountType, displayName, organizationName, language, o
   return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">Language<select aria-label="Language settings" value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button type="button" onClick={onSignOut} aria-label="Sign out"><span>&#8617;</span> Sign out</button><button type="button" onClick={() => setView('help')} aria-label="Help centre"><span>?</span> Help centre</button></div></aside>;
 }
 
-function AssessmentView({ language, t, loading, saving, error, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
+function AssessmentView({ language, t, loading, saving, error, saveError = null, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; saveError?: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
   const eyebrow = openingQuiz ? t.assessment.openingEyebrow : t.assessment.eyebrow;
   const title = openingQuiz ? t.assessment.openingTitle : t.assessment.title;
   const detail = openingQuiz ? t.assessment.openingBody : t.assessment.body;
@@ -908,7 +899,7 @@ function AssessmentView({ language, t, loading, saving, error, scenario, index, 
   const content = scenario.content[language] ?? scenario.content.en ?? Object.values(scenario.content)[0];
   const localized = (values: Record<string, string>) => values[language] ?? values.en ?? Object.values(values)[0] ?? '';
   const progressMax = Math.max(total, 1);
-  return <section className="content assessment-view"><Header eyebrow={eyebrow} title={title} detail={detail} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total || 10}</span><div role="progressbar" aria-valuemin={0} aria-valuemax={progressMax} aria-valuenow={index + 1} aria-label={`${t.common.question} ${index + 1} ${t.common.of} ${progressMax}`}><i style={{ width: `${((index + 1) / progressMax) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button type="button" key={option.optionKey} aria-pressed={selectedOptionKey === option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button type="button" className="primary action-button" disabled={selectedOptionKey === null || saving} onClick={onSubmit}>{saving ? t.assessment.saving : index === total - 1 ? t.assessment.seeStanding : t.assessment.continue} <b>→</b></button></article></section>;
+  return <section className="content assessment-view"><Header eyebrow={eyebrow} title={title} detail={detail} /><div className="assessment-progress"><span>{t.common.question} {index + 1} {t.common.of} {total || 10}</span><div role="progressbar" aria-valuemin={0} aria-valuemax={progressMax} aria-valuenow={index + 1} aria-label={`${t.common.question} ${index + 1} ${t.common.of} ${progressMax}`}><i style={{ width: `${((index + 1) / progressMax) * 100}%` }} /></div></div><article className="question-card"><p className="question-dimension">{scenario.riskDimensions[0] ?? content?.title} {t.assessment.manipulation}</p><h2>{content?.scenario ?? content?.title}</h2><div className="option-list">{scenario.options.map((option) => <button type="button" key={option.optionKey} aria-pressed={selectedOptionKey === option.optionKey} className={selectedOptionKey === option.optionKey ? 'option selected' : 'option'} onClick={() => onSelect(option.optionKey)}><span>{option.optionKey}</span>{localized(option.content)}</button>)}</div><button type="button" className="primary action-button" disabled={selectedOptionKey === null || saving} onClick={onSubmit}>{saving ? t.assessment.saving : index === total - 1 ? t.assessment.seeStanding : t.assessment.continue} <b>→</b></button>{saveError && <p className="assessment-submit-error" role="alert">{saveError}</p>}</article></section>;
 }
 
 function RiskProfileView({ profile, onRetake, onPracticeFocus, onContinue }: { profile: RiskProfile; onRetake: () => void; onPracticeFocus?: () => void; onContinue?: () => void }) {

@@ -6,6 +6,16 @@ export function hasAttemptedEveryScenario(scenarioIds: string[], attemptedScenar
   return scenarioIds.length > 0 && scenarioIds.every((scenarioId) => attempted.has(scenarioId));
 }
 
+/** Module completion requires at least one correct attempt per scenario. */
+export function hasCorrectlyAnsweredEveryScenario(
+  scenarioIds: string[],
+  attempts: Array<{ scenario_id: string; is_correct: boolean | null }>,
+) {
+  if (!scenarioIds.length) return false;
+  const correct = new Set(attempts.filter((attempt) => attempt.is_correct).map((attempt) => attempt.scenario_id));
+  return scenarioIds.every((scenarioId) => correct.has(scenarioId));
+}
+
 export async function awardModuleCertificate(userClient: SupabaseClient, userId: string, moduleId: string) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   const service = createServiceClient();
@@ -14,9 +24,9 @@ export async function awardModuleCertificate(userClient: SupabaseClient, userId:
   const scenarioIds = Array.isArray(module?.scenarios) ? module.scenarios.map((scenario) => scenario.id) : [];
   if (!scenarioIds.length) return null;
 
-  const { data: attempts, error: attemptsError } = await userClient.from('training_attempts').select('scenario_id').eq('user_id', userId).in('scenario_id', scenarioIds);
+  const { data: attempts, error: attemptsError } = await userClient.from('training_attempts').select('scenario_id, is_correct').eq('user_id', userId).in('scenario_id', scenarioIds);
   if (attemptsError) throw attemptsError;
-  if (!hasAttemptedEveryScenario(scenarioIds, attempts.map((attempt) => attempt.scenario_id))) return null;
+  if (!hasCorrectlyAnsweredEveryScenario(scenarioIds, attempts)) return null;
 
   const { data: existing, error: existingError } = await service.from('certificates').select('id, verification_id, user_id, module_id, issued_at').eq('user_id', userId).eq('module_id', moduleId).maybeSingle();
   if (existingError) throw existingError;

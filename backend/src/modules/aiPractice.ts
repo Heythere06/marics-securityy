@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { requireScoringClient } from '../lib/supabase.js';
 import { generatePracticeScenarioDraft } from './ai.js';
-import { hasAttemptedEveryScenario } from './certificates.js';
+import { hasCorrectlyAnsweredEveryScenario } from './certificates.js';
 
 export const aiPracticeGenerateSchema = z.object({
   moduleSlug: z.string().min(1).max(80).regex(/^[a-z0-9-]+$/),
@@ -31,9 +31,9 @@ async function assertManualModuleComplete(client: SupabaseClient, userId: string
   if (scenariosError) throw scenariosError;
   const scenarioIds = (scenarios ?? []).map((scenario) => scenario.id);
   if (!scenarioIds.length) throw new Error('MODULE_HAS_NO_MANUAL_SCENARIOS');
-  const { data: attempts, error: attemptsError } = await client.from('training_attempts').select('scenario_id').eq('user_id', userId).in('scenario_id', scenarioIds);
+  const { data: attempts, error: attemptsError } = await client.from('training_attempts').select('scenario_id, is_correct').eq('user_id', userId).in('scenario_id', scenarioIds);
   if (attemptsError) throw attemptsError;
-  if (!hasAttemptedEveryScenario(scenarioIds, (attempts ?? []).map((attempt) => attempt.scenario_id))) {
+  if (!hasCorrectlyAnsweredEveryScenario(scenarioIds, attempts ?? [])) {
     throw new Error('MANUAL_SCENARIOS_INCOMPLETE');
   }
 }
@@ -67,29 +67,9 @@ function threatCategoryFromSlug(slug: string) {
   return 'human cybersecurity risk';
 }
 
-async function applyPracticeToRiskProfile(client: SupabaseClient, userId: string, riskDimensions: string[], isCorrect: boolean) {
-  if (!riskDimensions.length) return;
-  const scoring = requireScoringClient(client);
-  const { data: profile, error } = await scoring.from('risk_profiles').select('strongest_dimension, focus_dimension, awareness_score, category_scores').eq('user_id', userId).maybeSingle();
-  if (error) throw error;
-  if (!profile) return;
-
-  const categoryScores = { ...(profile.category_scores ?? {}) } as Record<string, 'strong' | 'weak'>;
-  for (const dimension of riskDimensions) {
-    categoryScores[dimension] = isCorrect ? 'strong' : 'weak';
-  }
-  const entries = Object.entries(categoryScores);
-  const weak = entries.filter(([, score]) => score === 'weak').map(([dimension]) => dimension);
-  const strong = entries.filter(([, score]) => score === 'strong').map(([dimension]) => dimension);
-  const awarenessScore = entries.length ? Math.round((strong.length / entries.length) * 100) : profile.awareness_score;
-  const { error: updateError } = await scoring.from('risk_profiles').update({
-    category_scores: categoryScores,
-    focus_dimension: weak[0] ?? profile.focus_dimension,
-    strongest_dimension: strong[0] ?? profile.strongest_dimension,
-    awareness_score: awarenessScore,
-    updated_at: new Date().toISOString(),
-  }).eq('user_id', userId);
-  if (updateError) throw updateError;
+async function applyPracticeToRiskProfile(_client: SupabaseClient, _userId: string, _riskDimensions: string[], _isCorrect: boolean) {
+  // Opening-quiz category_scores / awareness_score stay baseline-only.
+  // AI practice progress is tracked on training_progress.ai_scenarios_* instead.
 }
 
 export async function generateAiPracticeScenario(client: SupabaseClient, user: User, input: z.infer<typeof aiPracticeGenerateSchema>) {

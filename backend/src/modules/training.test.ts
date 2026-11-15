@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getScenario, getTrainingSummary, listPublishedModules, recordTrainingAnswer, splitOptionFeedback, trainingAnswerSchema } from './training.js';
-import { hasAttemptedEveryScenario } from './certificates.js';
+import { hasAttemptedEveryScenario, hasCorrectlyAnsweredEveryScenario } from './certificates.js';
 import { adminModuleUpdateSchema } from './admin.js';
 import { scenarioWhySchema } from './ai.js';
 
@@ -231,5 +231,14 @@ describe('certificate completion', () => {
     expect(hasAttemptedEveryScenario(['a', 'b'], ['a', 'a'])).toBe(false);
     expect(hasAttemptedEveryScenario(['a', 'b'], ['a', 'b', 'a'])).toBe(true);
     expect(hasAttemptedEveryScenario([], [])).toBe(false);
+    expect(hasCorrectlyAnsweredEveryScenario(['a', 'b'], [
+      { scenario_id: 'a', is_correct: true },
+      { scenario_id: 'b', is_correct: false },
+    ])).toBe(false);
+    expect(hasCorrectlyAnsweredEveryScenario(['a', 'b'], [
+      { scenario_id: 'a', is_correct: false },
+      { scenario_id: 'a', is_correct: true },
+      { scenario_id: 'b', is_correct: true },
+    ])).toBe(true);
   });
 });
