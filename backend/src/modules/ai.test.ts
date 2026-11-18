@@ -56,6 +56,11 @@ describe('scenario follow-up questions', () => {
     expect(chatSchema.safeParse({ language: 'en', message: 'Hello', history: [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'How can I help?' }] }).success).toBe(true);
   });
 
+  it('maps a missing Claude model to AI_MODEL_UNAVAILABLE', async () => {
+    createMessage.mockRejectedValue(Object.assign(new Error('not_found_error: model: claude-haiku-4-5-20251001'), { status: 404 }));
+    await expect(chatWithCoach({ language: 'en', message: 'Is this WhatsApp safe?', history: [] })).rejects.toThrow('AI_MODEL_UNAVAILABLE');
+  });
+
   it('sends coach chat with bounded history and defensive instructions', async () => {
     createMessage.mockResolvedValue({ content: [{ type: 'text', text: 'Do not send money or vouchers from a WhatsApp message. Call your manager on a number you already have.' }] });
     const reply = await chatWithCoach({
