@@ -300,7 +300,10 @@ export async function chatWithCoach(accessToken: string, input: { language: 'en'
   });
   const payload = await response.json().catch(() => ({})) as { reply?: string; message?: string; error?: string };
   if (response.status === 404) {
-    throw new Error('The AI coach API route is missing on the server. Redeploy the backend that includes POST /api/ai/chat.');
+    throw new Error('The AI coach API route is missing on the server. Redeploy the Render backend from the latest main branch.');
+  }
+  if (response.status === 503) {
+    throw new Error(payload.message ?? 'The MARICS coach is not configured. Add CLAUDE_API_KEY on Render, then restart the API.');
   }
   if (!response.ok || !payload.reply) throw new Error(payload.message ?? 'The MARICS coach could not reply');
   return payload.reply;
@@ -422,6 +425,7 @@ export async function getTrainingScenario(accessToken: string, scenarioSlug: str
 
 export async function listAiPracticeScenarios(accessToken: string, moduleSlug: string) {
   const response = await apiFetch(`${API_BASE}/api/training/modules/${moduleSlug}/ai-practice`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) });
+  if (response.status === 404) return [];
   if (!response.ok) throw new Error((await response.json()).message ?? 'AI practice scenarios could not be loaded');
   return (await response.json()).scenarios as AiPracticeScenarioSummary[];
 }
@@ -434,6 +438,8 @@ export async function generateAiPracticeScenario(accessToken: string, moduleSlug
     signal: mergeAbortSignals(signal, 45_000),
   });
   const payload = await response.json().catch(() => ({})) as { scenario?: TrainingScenario; message?: string };
+  if (response.status === 404) throw new Error('AI practice is missing on the API server. Redeploy the Render backend from the latest main branch.');
+  if (response.status === 503) throw new Error(payload.message ?? 'AI practice is not configured. Add CLAUDE_API_KEY on Render and restart the API.');
   if (!response.ok || !payload.scenario) throw new Error(payload.message ?? 'AI practice scenario could not be generated');
   return { ...payload.scenario, source: 'ai' as const };
 }

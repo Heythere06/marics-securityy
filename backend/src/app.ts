@@ -101,7 +101,11 @@ export function buildApp() {
   });
   app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
-  app.get('/health', async () => ({ status: 'ok', service: 'marics-api' }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    service: 'marics-api',
+    ai: Boolean(process.env.CLAUDE_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim() || process.env.AI_PROVIDER_API_KEY?.trim()),
+  }));
 
   app.post('/api/auth/resend-verification', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {

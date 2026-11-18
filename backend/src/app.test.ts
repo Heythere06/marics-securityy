@@ -14,7 +14,8 @@ describe('health endpoint', () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ status: 'ok', service: 'marics-api' });
+    expect(response.json()).toMatchObject({ status: 'ok', service: 'marics-api' });
+    expect(typeof response.json().ai).toBe('boolean');
   });
 
   it('allows configured frontend origins through production preflight checks', async () => {

@@ -14,12 +14,16 @@ services:
       - key: FRONTEND_URL
         value: https://marics-securityy-frontend.vercel.app
       - key: ALLOWED_ORIGINS
-        value: https://marics-securityy-frontend.vercel.app,https://marics-securityy-frontend-*.vercel.app,http://localhost:5173,http://127.0.0.1:5173
+        value: https://marics-securityy.vercel.app,https://marics-securityy-frontend.vercel.app,https://marics-securityy-frontend-*.vercel.app,http://localhost:5173,http://127.0.0.1:5173
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: AI_PROVIDER_API_KEY
         sync: false
