@@ -441,6 +441,15 @@ function App() {
     const selectedAnswer = trainingScenario.options.find((option) => option.option_key === trainingAnswer);
     const correctAnswer = trainingScenario.options.find((option) => option.option_key === trainingResult.correctOptionKey);
     if (!selectedAnswer || !correctAnswer) return;
+    const scenarioPrompt = buildScenarioWhyPrompt(scenarioContent, trainingScenario.slug);
+    const optionPayload = trainingScenario.options
+      .map((option) => ({ key: option.option_key, text: localized(option.content).trim() || `Option ${option.option_key}` }))
+      .filter((option) => option.key === 'A' || option.key === 'B' || option.key === 'C' || option.key === 'D')
+      .slice(0, 4);
+    if (optionPayload.length < 2) {
+      setWhyError('This scenario does not have enough answer options for a follow-up question.');
+      return;
+    }
     const requestSlug = trainingScenario.slug;
     const controller = beginTrainingAiRequest();
     setWhyLoading(true);
@@ -450,16 +459,16 @@ function App() {
         language,
         question: {
           moduleTitle: trainingScenario.module.title[language] ?? trainingScenario.module.title.en ?? trainingScenario.module.slug,
-          scenarioTitle: scenarioContent?.title ?? trainingScenario.slug,
-          scenarioPrompt: scenarioContent?.scenario ?? scenarioContent?.message ?? scenarioContent?.title ?? '',
-          options: trainingScenario.options.map((option) => ({ key: option.option_key, text: localized(option.content) })),
+          scenarioTitle: (scenarioContent?.title ?? trainingScenario.slug).trim() || trainingScenario.slug,
+          scenarioPrompt,
+          options: optionPayload,
           selectedOptionKey: trainingAnswer,
           correctOptionKey: trainingResult.correctOptionKey,
-          selectedAnswer: localized(selectedAnswer.content),
-          correctAnswer: localized(correctAnswer.content),
+          selectedAnswer: localized(selectedAnswer.content).trim() || `Option ${trainingAnswer}`,
+          correctAnswer: localized(correctAnswer.content).trim() || `Option ${trainingResult.correctOptionKey}`,
           isCorrect: trainingResult.isCorrect,
-          riskDimensions: trainingScenario.riskDimensions,
-          existingExplanation: trainingResult.explanation,
+          riskDimensions: (trainingScenario.riskDimensions?.filter(Boolean).length ? trainingScenario.riskDimensions : ['General awareness']).slice(0, 8),
+          existingExplanation: (trainingResult.explanation || '').trim() || 'No written explanation was stored for this answer.',
           userQuestion: userQuestion.trim(),
         },
       }, controller.signal);
@@ -1675,6 +1684,35 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
       </article>}
     </>}
   </section>;
+}
+
+function buildScenarioWhyPrompt(
+  content: TrainingScenario['content'][string] | undefined,
+  fallbackSlug: string,
+) {
+  const parts: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) parts.push(value.trim());
+    else if (value && typeof value === 'object') {
+      for (const nested of Object.values(value as Record<string, unknown>)) {
+        if (typeof nested === 'string' && nested.trim()) parts.push(nested.trim());
+      }
+    }
+  };
+  push(content?.scenario);
+  push(content?.message);
+  push(content?.interaction);
+  push(content?.email);
+  push(content?.sms);
+  push(content?.chat);
+  push(content?.call);
+  push(content?.job);
+  push(content?.payment);
+  if (content?.channel) parts.push(`Channel: ${content.channel}`);
+  if (content?.sender) parts.push(`Sender: ${content.sender}`);
+  push(content?.title);
+  const prompt = [...new Set(parts)].join('\n').slice(0, 2400);
+  return prompt || `Training scenario ${fallbackSlug}`;
 }
 
 function TrainingView({ language, modules, selectedScenarioSlug, onScenarioSelect, scenario, loading, error, result, answer, submitting, onAnswer, onSubmit }: { language: Language; modules: TrainingModule[]; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey } | null; answer: TrainingOptionKey | null; submitting: boolean; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void }) {

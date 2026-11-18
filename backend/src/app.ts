@@ -714,11 +714,12 @@ export function buildApp() {
 
   app.post('/api/ai/chat', { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } }, async (request, reply) => {
     try {
-      const auth = await requireUser(request);
+      await requireUser(request);
       const input = chatSchema.parse(request.body);
       const replyText = await chatWithCoach(input);
       return reply.send({ reply: replyText });
     } catch (error) {
+      if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to chat with the MARICS coach.' });
       if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_CHAT', message: 'Send a short message to continue the conversation.' });
       if (error instanceof Error && error.message === 'AI_NOT_CONFIGURED') return reply.code(503).send({ error: 'AI_UNAVAILABLE', message: 'The MARICS coach is not configured yet.' });
@@ -745,7 +746,13 @@ export function buildApp() {
       }
       if (error instanceof Error && error.message === 'ACCOUNT_SUSPENDED') return reply.code(403).send({ error: 'ACCOUNT_SUSPENDED', message: 'This account has been suspended. Contact your administrator or MARICS support.' });
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') return reply.code(401).send({ error: 'AUTH_REQUIRED', message: 'Please sign in to request an explanation.' });
-      if (error instanceof z.ZodError) return reply.code(400).send({ error: 'INVALID_QUESTION_CONTEXT', message: 'A valid scenario answer is required for a focused explanation.' });
+      if (error instanceof z.ZodError) {
+        const detail = error.issues[0] ? `${error.issues[0].path.join('.') || 'question'}: ${error.issues[0].message}` : 'incomplete question context';
+        return reply.code(400).send({
+          error: 'INVALID_QUESTION_CONTEXT',
+          message: `That follow-up could not be validated (${detail}). Answer the scenario first, then ask about this specific answer.`,
+        });
+      }
       if (error instanceof Error && error.message === 'AI_FOLLOWUP_DAILY_LIMIT') return reply.code(429).send({ error: 'AI_FOLLOWUP_DAILY_LIMIT', message: 'You have reached today’s limit of 10 follow-up questions. Try again tomorrow.' });
       if (error instanceof Error && error.message === 'AI_USAGE_CAP_REACHED') return reply.code(429).send({ error: 'AI_USAGE_CAP_REACHED', message: 'The platform has reached its monthly AI request limit. Please try again next month.' });
       if (error instanceof Error && error.message === 'AI_RATE_LIMITED') return reply.code(429).send({ error: 'AI_RATE_LIMITED', message: 'You are asking questions too quickly. Wait a little and try again.' });

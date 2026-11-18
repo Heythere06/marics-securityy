@@ -39,8 +39,12 @@ describe('scenario follow-up questions', () => {
     createMessage.mockReset();
   });
 
-  it('requires the complete scenario, all answer options, and one scoped question', () => {
+  it('requires the complete scenario, answer options, and one scoped question', () => {
     expect(scenarioWhySchema.safeParse(context).success).toBe(true);
+    expect(scenarioWhySchema.safeParse({
+      ...context,
+      question: { ...context.question, options: context.question.options.slice(0, 3) },
+    }).success).toBe(true);
     const { userQuestion: _userQuestion, options: _options, ...incomplete } = context.question;
     expect(scenarioWhySchema.safeParse({ language: 'en', question: incomplete }).success).toBe(false);
     expect(scenarioWhySchema.safeParse({ ...context, prompt: 'general chat' }).success).toBe(false);

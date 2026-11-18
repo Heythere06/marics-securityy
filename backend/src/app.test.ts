@@ -93,9 +93,15 @@ describe('health endpoint', () => {
     expect(response.json().error).toBe('AUTH_REQUIRED');
   });
 
-  it('does not expose a general security chat endpoint', async () => {
+  it('does not expose the legacy /api/ai/ask endpoint', async () => {
     const response = await app.inject({ method: 'POST', url: '/api/ai/ask', payload: { prompt: 'How do I secure my account?' } });
     expect(response.statusCode).toBe(404);
+  });
+
+  it('requires authentication for the AI coach chat route', async () => {
+    const response = await app.inject({ method: 'POST', url: '/api/ai/chat', payload: { language: 'en', message: 'Is this WhatsApp from my manager safe?' } });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('AUTH_REQUIRED');
   });
 
   it('requires authentication to view a personal certificate shelf', async () => {
