@@ -303,7 +303,7 @@ export async function chatWithCoach(accessToken: string, input: { language: 'en'
     throw new Error('The AI coach API route is missing on the server. Redeploy the Render backend from the latest main branch.');
   }
   if (response.status === 503) {
-    throw new Error(payload.message ?? 'The MARICS coach is not configured. Add CLAUDE_API_KEY on Render, then restart the API.');
+    throw new Error(payload.message ?? 'The MARICS coach is not configured. Set AI_PROVIDER_API_KEY on Render, then restart the API.');
   }
   if (!response.ok || !payload.reply) throw new Error(payload.message ?? 'The MARICS coach could not reply');
   return payload.reply;
@@ -439,7 +439,7 @@ export async function generateAiPracticeScenario(accessToken: string, moduleSlug
   });
   const payload = await response.json().catch(() => ({})) as { scenario?: TrainingScenario; message?: string };
   if (response.status === 404) throw new Error('AI practice is missing on the API server. Redeploy the Render backend from the latest main branch.');
-  if (response.status === 503) throw new Error(payload.message ?? 'AI practice is not configured. Add CLAUDE_API_KEY on Render and restart the API.');
+  if (response.status === 503) throw new Error(payload.message ?? 'AI practice is not configured. Set AI_PROVIDER_API_KEY on Render and restart the API.');
   if (!response.ok || !payload.scenario) throw new Error(payload.message ?? 'AI practice scenario could not be generated');
   return { ...payload.scenario, source: 'ai' as const };
 }

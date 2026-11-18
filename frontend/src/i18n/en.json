@@ -111,6 +111,11 @@
     "language": "Language",
     "signOut": "Sign out",
     "help": "Help centre",
+    "hideSidebar": "Hide sidebar",
+    "showSidebar": "Show sidebar",
+    "accountTools": "Account menu",
+    "hideAccountTools": "Hide language, sign out, help, and settings",
+    "showAccountTools": "Show language, sign out, help, and settings",
     "nav": {
       "overview": "Dashboard",
       "users": "Users",

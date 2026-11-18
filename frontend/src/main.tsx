@@ -595,7 +595,7 @@ function PublicSite({ language, setLanguage, sessionNotice = null, onClearSessio
   return <main className="public-site">
     <nav className="public-nav" aria-label="Primary">
       <a className={`public-logo-wrap ${logoState}`} href="#top" aria-label="MARICS Security home">
-        <img className="public-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} fetchPriority="high" onLoad={() => setLogoState('loaded')} onError={() => setLogoState('error')} />
+        <img className="public-logo" src="/assets/marics-logo.png" alt="MARICS Security" width={220} height={72} fetchPriority="high" onLoad={() => setLogoState('loaded')} onError={() => setLogoState('error')} />
         <span className="public-logo-fallback" aria-hidden={logoState === 'loaded'}>MARICS<span>/ SECURITY</span></span>
       </a>
       <div className="public-links">
@@ -884,6 +884,9 @@ function NavIcon({ name }: { name: string }) {
     organization: 'M3 21h18M5 21V5l7-3 7 3v16M9 21v-5h6v5M8 8h1M15 8h1M8 11h1M15 11h1',
     modules: 'M4 4h16v16H4zM8 8h8M8 12h8M8 16h5',
     reports: 'M5 20V10M12 20V4M19 20v-7',
+    menu: 'M4 6h16M4 12h16M4 18h16',
+    collapse: 'M15 18l-6-6 6-6M9 4v16',
+    chevronUp: 'M18 15l-6-6-6 6',
     settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.4 1.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L9 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H7v-2h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L8.4 9 10 7.6l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V6h2v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.6 9l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v2h-.2a1.7 1.7 0 0 0-1.4 1z',
     assessment: 'M12 3a9 9 0 1 0 9 9M12 7v5l3 2',
     training: 'M4 5h16v14H4zM8 9h8M8 13h5',
@@ -905,7 +908,33 @@ function Sidebar({ role, accountType, displayName, organizationName, language, o
           ? [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['organization', 'organization', labelFor('organization', 'Organization')], ['settings', 'settings', labelFor('settings', 'Settings')]]
           : [['overview', 'dashboard', labelFor('overview', 'Dashboard')], ['assessment', 'assessment', labelFor('assessment', 'My risk profile')], ['training', 'training', labelFor('training', 'Training')], ['assistant', 'assistant', labelFor('assistant', 'AI coach')], ['progress', 'progress', labelFor('progress', 'Progress')], ['certificates', 'certificates', labelFor('certificates', 'Certificates')], ['settings', 'settings', labelFor('settings', 'Settings')]];
   const accountLabel = accountTypeLabel(role, organizationName);
-  return <aside className="sidebar"><div className="brand"><img className="sidebar-logo" src="/assets/marics-logo.webp" alt="MARICS Security" width={142} height={48} /></div><div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>{onboardingLocked && <p className="sidebar-note">Complete the opening security quiz first. It sets your strengths, weaknesses, and vulnerability level before anything else unlocks.</p>}{!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}<nav className="side-nav" aria-label="Main navigation">{navigation.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav><div className="side-bottom"><label className="sidebar-language">{t.workspace.language}<select aria-label={t.workspace.language} value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label><button type="button" onClick={onSignOut} aria-label={t.workspace.signOut}><span>&#8617;</span> {t.workspace.signOut}</button><button type="button" onClick={() => setView('help')} aria-label={t.workspace.help}><span>?</span> {t.workspace.help}</button></div></aside>;
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [accountToolsOpen, setAccountToolsOpen] = useState(false);
+  const mainNav = navigation.filter(([target]) => target !== 'settings');
+  const settingsLabel = labelFor('settings', 'Settings');
+  if (!sidebarOpen) {
+    return <button type="button" className="sidebar-reveal" onClick={() => setSidebarOpen(true)} aria-label={t.workspace.showSidebar} title={t.workspace.showSidebar}><NavIcon name="menu" /></button>;
+  }
+  return <aside className="sidebar">
+    <div className="brand">
+      <img className="sidebar-logo" src="/assets/marics-logo.png" alt="MARICS Security" width={220} height={88} />
+      <button type="button" className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label={t.workspace.hideSidebar} title={t.workspace.hideSidebar}><NavIcon name="collapse" /></button>
+    </div>
+    <div className="profile-chip"><div className="avatar">{initials(displayName)}</div><div><strong title={displayName}>{displayName}</strong><small title={accountLabel}>{accountLabel}</small></div></div>
+    {!onboardingLocked && accountType === 'organization' && !hasOrganizations && <p className="sidebar-note">Create your organization workspace to finish account setup.</p>}
+    <nav className="side-nav" aria-label="Main navigation">{mainNav.map(([target, icon, label]) => <button type="button" key={target} className={view === target ? 'active' : ''} data-view={target} disabled={onboardingLocked && target !== 'assessment'} onClick={() => setView(target as View)} aria-current={view === target ? 'page' : undefined}><NavIcon name={icon} /> {label}</button>)}</nav>
+    <div className="side-bottom">
+      <button type="button" className="side-bottom-toggle" aria-expanded={accountToolsOpen} aria-controls="sidebar-account-tools" onClick={() => setAccountToolsOpen((open) => !open)} aria-label={accountToolsOpen ? t.workspace.hideAccountTools : t.workspace.showAccountTools}>
+        <NavIcon name={accountToolsOpen ? 'chevronUp' : 'settings'} /> {t.workspace.accountTools}
+      </button>
+      {accountToolsOpen && <div id="sidebar-account-tools" className="side-bottom-tools">
+        <label className="sidebar-language">{t.workspace.language}<select aria-label={t.workspace.language} value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}><option value="en">English</option><option value="af">Afrikaans</option><option value="pt">Português</option></select></label>
+        <button type="button" className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')} aria-label={settingsLabel} aria-current={view === 'settings' ? 'page' : undefined}><NavIcon name="settings" /> {settingsLabel}</button>
+        <button type="button" onClick={onSignOut} aria-label={t.workspace.signOut}><span>&#8617;</span> {t.workspace.signOut}</button>
+        <button type="button" onClick={() => setView('help')} aria-label={t.workspace.help}><span>?</span> {t.workspace.help}</button>
+      </div>}
+    </div>
+  </aside>;
 }
 
 function AssessmentView({ language, t, loading, saving, error, saveError = null, scenario, index, total, selectedOptionKey, onSelect, onSubmit, onRetry, openingQuiz = false }: { language: Language; t: ReturnType<typeof getTranslations>; loading: boolean; saving?: boolean; error: string | null; saveError?: string | null; scenario: OnboardingScenario | null; index: number; total: number; selectedOptionKey: 'A' | 'B' | 'C' | null; onSelect: (optionKey: 'A' | 'B' | 'C') => void; onSubmit: () => void; onRetry: () => void; openingQuiz?: boolean }) {
@@ -1560,15 +1589,17 @@ type TrainingSummary = { attempted: number; correct: number; lastAttemptAt: stri
 
 function Overview({ displayName, onboardingComplete, riskProfile, trainingSummary, trainingModules, onAssessment, onTraining, organizationName, onOrganization }: { displayName: string; onboardingComplete: boolean; riskProfile: RiskProfile | null; trainingSummary: TrainingSummary; trainingModules: TrainingModule[]; onAssessment: () => void; onTraining: () => void; organizationName?: string | null; onOrganization?: () => void }) {
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const [showAllModules, setShowAllModules] = useState(false);
   const progressBySlug = new Map(trainingSummary.modules.map((module) => [module.slug, module]));
   const modules = trainingModules.map((module, index) => {
     const progress = progressBySlug.get(module.slug);
-    return { title: module.title.en ?? module.slug, label: String(index + 1).padStart(2, '0'), meta: `${progress?.scenariosAttempted ?? 0} / ${module.scenarioCount} scenarios`, tone: ['rust', 'blue', 'sage', 'gold', 'plum', 'teal'][index % 6] };
+    return { title: module.title.en ?? module.slug, slug: module.slug, label: String(index + 1).padStart(2, '0'), meta: `${progress?.scenariosAttempted ?? 0} / ${module.scenarioCount} scenarios`, tone: ['rust', 'blue', 'sage', 'gold', 'plum', 'teal'][index % 6] };
   });
+  const visibleModules = showAllModules ? modules : modules.slice(0, 3);
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const weakCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'weak').length;
   const strongCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'strong').length;
-  return <section className="content"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." />{organizationName && onOrganization && <div className="org-personal-banner"><div><p className="card-kicker">YOUR ORGANIZATION</p><h2>{organizationName}</h2><p>This Dashboard is your individual learning home. Team metrics stay in Organization.</p></div><button className="text-button" type="button" onClick={onOrganization}>Open organization workspace <b>→</b></button></div>}<div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Complete the opening quiz first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten pressure scenarios set your strengths, weaknesses, and vulnerability level before training unlocks.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="module-grid">{modules.map(module => <article className={`module-card ${module.tone}`} key={module.title}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
+  return <section className="content"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Your personal security workspace. Small decisions, practiced often, create durable habits." />{organizationName && onOrganization && <div className="org-personal-banner"><div><p className="card-kicker">YOUR ORGANIZATION</p><h2>{organizationName}</h2><p>This Dashboard is your individual learning home. Team metrics stay in Organization.</p></div><button className="text-button" type="button" onClick={onOrganization}>Open organization workspace <b>→</b></button></div>}<div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Complete the opening quiz first'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Recommended from your saved risk profile.' : 'Continue with your next unfinished module.' : 'Ten pressure scenarios set your strengths, weaknesses, and vulnerability level before training unlocks.'}</p><button onClick={onboardingComplete ? onTraining : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="training-catalog-wrap"><div className="module-grid">{visibleModules.map(module => <article className={`module-card ${module.tone}`} key={module.slug}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button onClick={onTraining}>Explore <b>&#8594;</b></button></article>)}</div>{modules.length > 3 && <button type="button" className="list-more-button" onClick={() => setShowAllModules((open) => !open)}>{showAllModules ? 'Show less' : 'More'}</button>}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas appear here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Use training to turn focus areas into durable habits.` : 'Complete your assessment to see the manipulation patterns that deserve more practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.<br /><small>Your training history will appear here.</small></p></>}</div></article></div></section>;
 }
 
 function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, onRetryCatalog, onOpenCertificates, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, whyQuestionOpen, whyQuestionText, onWhyQuestionTextChange, onWhyQuestionOpenChange, onAskWhy, onAnswer, onSubmit, aiPractice, aiPracticeGenerating, onGenerateAiPractice }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; onRetryCatalog: () => void; onOpenCertificates: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; whyQuestionOpen: boolean; whyQuestionText: string; onWhyQuestionTextChange: (question: string) => void; onWhyQuestionOpenChange: (open: boolean) => void; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void; aiPractice: AiPracticeScenarioSummary[]; aiPracticeGenerating: boolean; onGenerateAiPractice: (prompt?: string) => void }) {
@@ -1589,10 +1620,18 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
   const content = activeScenario?.content[language] ?? activeScenario?.content.en ?? (activeScenario ? Object.values(activeScenario.content)[0] : undefined);
   const optionKeys: TrainingOptionKey[] = ['A', 'B', 'C', 'D'];
   const [aiPrompt, setAiPrompt] = useState('');
+  const [showAllModules, setShowAllModules] = useState(false);
+  const [showAllScenarios, setShowAllScenarios] = useState(false);
   const [inspectState, setInspectState] = useState({ slug: selectedScenarioSlug, complete: false });
   useEffect(() => {
     setInspectState({ slug: selectedScenarioSlug, complete: false });
   }, [selectedScenarioSlug]);
+  useEffect(() => {
+    setShowAllScenarios(false);
+  }, [selectedModule?.slug]);
+  const visibleModules = showAllModules ? modules : modules.slice(0, 3);
+  const scenarioSlugs = selectedModule?.scenarioSlugs ?? [];
+  const visibleScenarioSlugs = showAllScenarios ? scenarioSlugs : scenarioSlugs.slice(0, 6);
   const inspected = inspectState.slug === selectedScenarioSlug && inspectState.complete;
   const setInspected = useCallback((complete: boolean) => {
     setInspectState((current) => current.slug === selectedScenarioSlug && current.complete === complete ? current : { slug: selectedScenarioSlug, complete });
@@ -1600,18 +1639,22 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
 
   return <section className="content training-view">
     <Header eyebrow="PERSONAL SECURITY / PRACTICE" title={moduleTitle} detail={selectedModule?.description[language] ?? selectedModule?.description.en ?? 'Choose a module, learn the signals, then practice the decisions.'} />
-    {modules.length > 0 && <nav className="training-catalog" aria-label="Published training modules">{modules.map((module, index) => {
-      const moduleProgress = summary.modules.find((entry) => entry.slug === module.slug);
-      const attempted = moduleProgress?.scenariosAttempted ?? 0;
-      const completed = moduleProgress?.completed ?? false;
-      const percent = module.scenarioCount ? Math.min(100, Math.round((attempted / module.scenarioCount) * 100)) : 0;
-      return <button type="button" key={module.id} aria-pressed={module.slug === selectedModule?.slug} className={`training-module-card tone-${index % 6}${module.slug === selectedModule?.slug ? ' selected' : ''}`} onClick={() => onModuleSelect(module.slug)}>
-        <span className="training-module-status">{completed ? 'COMPLETE' : `${attempted} / ${module.scenarioCount} PRACTICED`}</span>
-        <strong>{module.title[language] ?? module.title.en ?? module.slug}</strong>
-        <span className="training-module-description">{module.description[language] ?? module.description.en}</span>
-        <span className="training-progress-track" role="progressbar" aria-label={`${module.title.en ?? module.slug} progress`} aria-valuemin={0} aria-valuemax={module.scenarioCount} aria-valuenow={attempted}><i style={{ width: `${percent}%` }} /></span>
-      </button>;
-    })}</nav>}
+    {modules.length > 0 && <div className="training-catalog-wrap">
+      <nav className="training-catalog" aria-label="Published training modules">{visibleModules.map((module) => {
+        const index = modules.indexOf(module);
+        const moduleProgress = summary.modules.find((entry) => entry.slug === module.slug);
+        const attempted = moduleProgress?.scenariosAttempted ?? 0;
+        const completed = moduleProgress?.completed ?? false;
+        const percent = module.scenarioCount ? Math.min(100, Math.round((attempted / module.scenarioCount) * 100)) : 0;
+        return <button type="button" key={module.id} aria-pressed={module.slug === selectedModule?.slug} className={`training-module-card tone-${index % 6}${module.slug === selectedModule?.slug ? ' selected' : ''}`} onClick={() => onModuleSelect(module.slug)}>
+          <span className="training-module-status">{completed ? 'COMPLETE' : `${attempted} / ${module.scenarioCount} PRACTICED`}</span>
+          <strong>{module.title[language] ?? module.title.en ?? module.slug}</strong>
+          <span className="training-module-description">{module.description[language] ?? module.description.en}</span>
+          <span className="training-progress-track" role="progressbar" aria-label={`${module.title.en ?? module.slug} progress`} aria-valuemin={0} aria-valuemax={module.scenarioCount} aria-valuenow={attempted}><i style={{ width: `${percent}%` }} /></span>
+        </button>;
+      })}</nav>
+      {modules.length > 3 && <button type="button" className="list-more-button" onClick={() => setShowAllModules((open) => !open)}>{showAllModules ? 'Show less' : 'More'}</button>}
+    </div>}
     {!modules.length && !loading && <article className="role-empty"><h2>No training is published yet.</h2><p>Your administrator will make modules available here. If modules were just published, retry the catalog.</p><button className="text-button" type="button" onClick={onRetryCatalog}>Retry catalog <b>→</b></button></article>}
     {error && !selectedModule && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" type="button" onClick={onRetryCatalog}>Retry catalog</button></div>}
     {selectedModule && <>
@@ -1624,10 +1667,14 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
         <div className="training-learning-heading"><div><p className="card-kicker">BEFORE YOU PRACTICE</p><h2 id="learning-title">What to know</h2></div>{materialLanguage !== language && material && <span>Learning material in English</span>}</div>
         {material ? <div className="training-learning-grid"><article><p className="card-kicker">WHY IT WORKS</p><p>{material.whyItMatters}</p></article><article><p className="card-kicker">WARNING SIGNS</p><p>{material.warningSigns}</p></article><article><p className="card-kicker">SAFER PRACTICE</p><p>{material.bestPractice}</p></article></div> : <p className="training-material-empty">Learning material is being prepared for this module.</p>}
       </section>
-      {selectedModule.scenarioSlugs.length > 0 && <div className="scenario-chooser">
-        <div className="scenario-chooser-heading"><p className="card-kicker">SCENARIOS</p><h2>Choose a situation to practice</h2></div>
+      {scenarioSlugs.length > 0 && <div className="scenario-chooser">
+        <div className="scenario-chooser-heading">
+          <p className="card-kicker">SCENARIOS</p>
+          <h2>Choose a situation to practice</h2>
+        </div>
         <div className="scenario-grid" role="listbox" aria-label="Training scenarios">
-          {selectedModule.scenarioSlugs.map((slug, index) => {
+          {visibleScenarioSlugs.map((slug) => {
+            const index = scenarioSlugs.indexOf(slug);
             const title = selectedModule.scenarioTitles?.find((entry) => entry.slug === slug)?.title ?? slug.replace(/-/g, ' ');
             const selected = slug === selectedScenarioSlug;
             return <button type="button" role="option" aria-selected={selected} key={slug} className={`scenario-choice tone-${index % 6}${selected ? ' selected' : ''}`} onClick={() => onScenarioSelect(slug)}>
@@ -1636,6 +1683,7 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
             </button>;
           })}
         </div>
+        {scenarioSlugs.length > 6 && <button type="button" className="list-more-button" onClick={() => setShowAllScenarios((open) => !open)}>{showAllScenarios ? 'Show less' : 'More'}</button>}
       </div>}
       {aiPractice.length > 0 && <div className="scenario-chooser ai-practice-chooser">
         <div className="scenario-chooser-heading"><p className="card-kicker">AI PRACTICE</p><h2>Fresh situations to practice</h2></div>

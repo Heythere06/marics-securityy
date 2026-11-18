@@ -13,7 +13,7 @@ const emailProvider = process.env.EMAIL_PROVIDER?.trim().toLowerCase()
 const aiReady = Boolean(process.env.CLAUDE_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim() || process.env.AI_PROVIDER_API_KEY?.trim());
 console.info(`[config] email: provider=${emailProvider} SMTP=${smtpReady ? 'present' : 'missing'} RESEND=${resendReady ? 'present' : 'missing'} EMAIL_FROM=${emailFrom ? 'present' : 'missing'} SUPABASE_URL=${process.env.SUPABASE_URL ? 'present' : 'missing'} AI=${aiReady ? 'present' : 'missing'}`);
 if (!aiReady) {
-  console.warn('[config] No Claude key on this server. Set CLAUDE_API_KEY (or ANTHROPIC_API_KEY / AI_PROVIDER_API_KEY) on Render, then restart. Chat and AI practice will return 503 until then.');
+  console.warn('[config] No Claude key on this server. Set AI_PROVIDER_API_KEY on Render, then restart. Chat and AI practice will return 503 until then.');
 }
 if (!smtpReady && /onboarding@resend\.dev/i.test(emailFrom)) {
   console.warn('[config] No SMTP configured and EMAIL_FROM uses onboarding@resend.dev — add Gmail SMTP (or similar) for tester delivery, or verify a Resend domain later.');

@@ -111,6 +111,11 @@
     "language": "Taal",
     "signOut": "Teken uit",
     "help": "Hulpsentrum",
+    "hideSidebar": "Versteek sybalk",
+    "showSidebar": "Wys sybalk",
+    "accountTools": "Rekeningkieslys",
+    "hideAccountTools": "Versteek taal, teken uit, hulp en instellings",
+    "showAccountTools": "Wys taal, teken uit, hulp en instellings",
     "nav": {
       "overview": "Kontrolebord",
       "users": "Gebruikers",

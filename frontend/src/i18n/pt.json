@@ -111,6 +111,11 @@
     "language": "Idioma",
     "signOut": "Terminar sessão",
     "help": "Centro de ajuda",
+    "hideSidebar": "Ocultar barra lateral",
+    "showSidebar": "Mostrar barra lateral",
+    "accountTools": "Menu da conta",
+    "hideAccountTools": "Ocultar idioma, terminar sessão, ajuda e definições",
+    "showAccountTools": "Mostrar idioma, terminar sessão, ajuda e definições",
     "nav": {
       "overview": "Painel",
       "users": "Utilizadores",
