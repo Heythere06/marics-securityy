@@ -1757,7 +1757,10 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
           ].filter(Boolean).join(' ');
           return <button key={key} type="button" aria-pressed={answer === key} disabled={Boolean(result) || submitting || !inspected} className={optionClass} onClick={() => onAnswer(key)}><b>{key}</b>{optionText(key)}</button>;
         })}</div>
-        <button className="primary action-button" type="button" disabled={!inspected || !answer || submitting || Boolean(result)} onClick={onSubmit}>{submitting ? 'Saving answer...' : 'Save answer'} <b>&#8594;</b></button>
+        <div className="training-quiz-actions">
+          <button className="primary action-button" type="button" disabled={!inspected || !answer || submitting || Boolean(result)} onClick={onSubmit}>{submitting ? 'Saving answer...' : 'Save answer'} <b>&#8594;</b></button>
+          {result && <button className="primary action-button training-next" type="button" onClick={result.moduleCompleted && manualsComplete ? () => onGenerateAiPractice(aiPrompt) : onNextScenario}>{result.moduleCompleted && manualsComplete ? (aiPracticeGenerating ? 'Generating with Claude...' : aiPrompt.trim() ? 'Generate from my prompt' : 'Generate AI scenario') : 'Next scenario'} <b>&#8594;</b></button>}
+        </div>
         {result && <div className={`feedback quiz-result ${result.isCorrect ? 'good' : 'bad'}`} role="status">
           <div className="quiz-result-burst" aria-hidden="true">
             {result.isCorrect ? <>
@@ -1777,7 +1780,6 @@ function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, on
           {whyExplanation && <p className="ask-why-answer" role="status"><strong>More context:</strong> {whyExplanation}</p>}
           {!result.isCorrect && <p className="feedback-correct">The strongest response is option {result.correctOptionKey}.</p>}
           <span>Manipulation signals: {activeScenario.riskDimensions.join(' + ')}</span>
-          <button className="text-button training-next" type="button" onClick={result.moduleCompleted && manualsComplete ? () => onGenerateAiPractice(aiPrompt) : onNextScenario}>{result.moduleCompleted && manualsComplete ? (aiPracticeGenerating ? 'Generating with Claude...' : aiPrompt.trim() ? 'Generate from my prompt' : 'Generate AI scenario') : 'Next scenario'} <b>&#8594;</b></button>
         </div>}
       </article>}
     </>}

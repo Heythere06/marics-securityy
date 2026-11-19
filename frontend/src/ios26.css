@@ -119,6 +119,22 @@ button:focus-visible {
   text-align: center;
 }
 
+.training-quiz-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.training-quiz-actions .training-next {
+  margin-top: 0;
+}
+
+.training-quiz-actions .action-button {
+  margin-top: 0 !important;
+}
+
 .standing-actions {
   display: flex;
   flex-wrap: nowrap;
