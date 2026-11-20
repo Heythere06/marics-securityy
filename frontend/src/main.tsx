@@ -861,7 +861,7 @@ function EmployeeDashboard({ displayName, organizations, riskProfile, trainingSu
   const membershipLabel = organizations.map((organization) => organization.name).filter(Boolean).join(' · ');
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const recommendedTitle = trainingSummary.recommendation?.title.en ?? trainingSummary.recommendation?.slug;
-  return <section className="content">
+  return <section className="content dashboard-view">
     <Header eyebrow="Employee workspace" title={timeGreeting(displayName)} detail="Your learning path. Answers stay private." />
     <div className="role-banner"><div><p className="card-kicker">ORGANIZATION MEMBERSHIP</p><h2>{membershipLabel || 'No organization linked yet'}</h2><p>{membershipLabel ? 'Your employer sees team totals only. Answers stay private.' : 'Open your invite while signed in with the invited email.'}</p></div><span className="role-pill">EMPLOYEE</span></div>
     {riskProfile && standing ? <div className={`standing-banner level-${standing.level} employee-standing`}>
@@ -1026,14 +1026,191 @@ function RiskProfileView({ profile, onRetake, onPracticeFocus, onContinue }: { p
   </section>;
 }
 
+const PROGRESS_RING_COLORS = ['#34c759', '#8b5cf6', '#ec4899', '#f59e0b', '#3b82f6'];
+
+function shortProgressLabel(value: string, max = 18) {
+  const cleaned = value.replace(/_/g, ' ').trim();
+  if (cleaned.length <= max) return cleaned;
+  return `${cleaned.slice(0, max - 1)}…`;
+}
+
+function ProgressRadialChart({ modules }: { modules: Array<{ id: string; label: string; percent: number }> }) {
+  const rings = modules.slice(0, 5);
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  return (
+    <div className="progress-chart-visual progress-radial">
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Module completion rings">
+        {rings.map((module, index) => {
+          const radius = 96 - index * 16;
+          const circumference = 2 * Math.PI * radius;
+          const progress = Math.max(0, Math.min(100, module.percent)) / 100;
+          return (
+            <g key={module.id}>
+              <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(16, 37, 54, .08)" strokeWidth="10" />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={radius}
+                fill="none"
+                stroke={PROGRESS_RING_COLORS[index % PROGRESS_RING_COLORS.length]}
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={`${circumference * progress} ${circumference}`}
+                transform={`rotate(-90 ${cx} ${cy})`}
+              />
+            </g>
+          );
+        })}
+        {!rings.length && <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fill="#60798a" fontSize="12">No modules yet</text>}
+      </svg>
+      {rings.length > 0 && (
+        <ul className="progress-chart-legend">
+          {rings.map((module, index) => (
+            <li key={module.id}>
+              <i style={{ background: PROGRESS_RING_COLORS[index % PROGRESS_RING_COLORS.length] }} />
+              <span>{module.label}</span>
+              <strong>{module.percent}%</strong>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ProgressDualBarChart({ modules }: { modules: Array<{ id: string; label: string; attemptedPercent: number; correctPercent: number; attempted: number; correct: number; total: number }> }) {
+  return (
+    <div className="progress-chart-visual progress-dual-bars" role="img" aria-label="Practiced versus correct by module">
+      {modules.length ? modules.map((module) => (
+        <div className="progress-dual-row" key={module.id}>
+          <span className="progress-dual-label" title={module.label}>{module.label}</span>
+          <div className="progress-dual-track" aria-hidden="true">
+            <b style={{ width: `${module.attemptedPercent}%` }} />
+            <i style={{ width: `${module.correctPercent}%` }} />
+          </div>
+          <span className="progress-dual-value">{module.correct}/{module.attempted}/{module.total}</span>
+        </div>
+      )) : <p className="progress-chart-empty">No module practice data yet.</p>}
+      <div className="progress-dual-key"><span><b /> Practiced</span><span><i /> Correct</span></div>
+    </div>
+  );
+}
+
+function ProgressDivergingChart({
+  dimensions,
+  modules,
+}: {
+  dimensions: Array<{ key: string; label: string; strong: boolean }>;
+  modules: Array<{ id: string; label: string; accuracy: number }>;
+}) {
+  const left = dimensions.slice(0, 6);
+  const right = modules.slice(0, 6);
+  return (
+    <div className="progress-chart-visual progress-diverging" role="img" aria-label="Risk strengths versus module accuracy">
+      <div className="progress-diverging-col">
+        <p className="progress-chart-sub">Risk profile</p>
+        {left.length ? left.map((dimension) => (
+          <div className={`progress-diverging-row ${dimension.strong ? 'strong' : 'weak'}`} key={dimension.key}>
+            <span>{dimension.label}</span>
+            <div className="progress-diverging-bar"><i style={{ width: dimension.strong ? '88%' : '62%' }} /></div>
+          </div>
+        )) : <p className="progress-chart-empty">Take the opening quiz to score risk areas.</p>}
+      </div>
+      <div className="progress-diverging-axis" aria-hidden="true" />
+      <div className="progress-diverging-col right">
+        <p className="progress-chart-sub">Module accuracy</p>
+        {right.length ? right.map((module) => (
+          <div className="progress-diverging-row accuracy" key={module.id}>
+            <span>{module.label}</span>
+            <div className="progress-diverging-bar"><i style={{ width: `${module.accuracy}%` }} /></div>
+            <strong>{module.accuracy}%</strong>
+          </div>
+        )) : <p className="progress-chart-empty">Practice scenarios to see accuracy.</p>}
+      </div>
+    </div>
+  );
+}
+
+function ProgressGaugeChart({ value, label, detail }: { value: number; label: string; detail: string }) {
+  const clamped = Math.max(0, Math.min(100, value));
+  const angle = -90 + (clamped / 100) * 180;
+  const rad = (angle * Math.PI) / 180;
+  const cx = 120;
+  const cy = 118;
+  const needleLength = 72;
+  const tipX = cx + needleLength * Math.cos(rad);
+  const tipY = cy + needleLength * Math.sin(rad);
+  const circumference = Math.PI * 90;
+  const filled = (clamped / 100) * circumference;
+  return (
+    <div className="progress-chart-visual progress-gauge">
+      <svg viewBox="0 0 240 150" role="img" aria-label={`${label} ${clamped}`}>
+        <path d="M 30 118 A 90 90 0 0 1 210 118" fill="none" stroke="rgba(16, 37, 54, .1)" strokeWidth="18" strokeLinecap="round" />
+        <path
+          d="M 30 118 A 90 90 0 0 1 210 118"
+          fill="none"
+          stroke="#2dd4bf"
+          strokeWidth="18"
+          strokeLinecap="round"
+          strokeDasharray={`${filled} ${circumference}`}
+        />
+        <circle cx={cx} cy={cy} r="8" fill="#334155" />
+        <line x1={cx} y1={cy} x2={tipX} y2={tipY} stroke="#334155" strokeWidth="4" strokeLinecap="round" />
+        <text x={cx} y={138} textAnchor="middle" fill="#102536" fontSize="22" fontWeight="600">{clamped}%</text>
+      </svg>
+      <div className="progress-gauge-copy">
+        <strong>{label}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 function ProgressView({ language, summary, riskProfile, onTraining, onOpenRecommended }: { language: Language; summary: TrainingSummary; riskProfile: RiskProfile | null; onTraining: () => void; onOpenRecommended: () => void }) {
   const available = summary.modules.reduce((total, module) => total + module.scenarioCount, 0);
   const completed = summary.modules.filter((module) => module.completed).length;
   const accuracy = summary.attempted ? Math.round((summary.correct / summary.attempted) * 100) : 0;
+  const catalogProgress = available ? Math.round((summary.modules.reduce((total, module) => total + Math.min(module.scenariosAttempted, module.scenarioCount), 0) / available) * 100) : 0;
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const recommendedTitle = summary.recommendation?.title[language] ?? summary.recommendation?.title.en ?? summary.recommendation?.slug;
+  const moduleRows = summary.modules.map((module) => {
+    const title = module.title[language] ?? module.title.en ?? module.slug;
+    const attemptedPercent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosAttempted / module.scenarioCount) * 100)) : 0;
+    const correctPercent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosCorrect / module.scenarioCount) * 100)) : 0;
+    const moduleAccuracy = module.scenariosAttempted ? Math.round((module.scenariosCorrect / module.scenariosAttempted) * 100) : 0;
+    return {
+      id: module.id,
+      label: shortProgressLabel(title),
+      fullLabel: title,
+      percent: attemptedPercent,
+      attemptedPercent,
+      correctPercent,
+      attempted: module.scenariosAttempted,
+      correct: module.scenariosCorrect,
+      total: module.scenarioCount,
+      accuracy: moduleAccuracy,
+      completed: module.completed,
+    };
+  });
+  const radialModules = [...moduleRows].sort((a, b) => b.percent - a.percent).slice(0, 5);
+  const dualModules = moduleRows.slice(0, 7);
+  const dimensionRows = Object.entries(riskProfile?.category_scores ?? {}).map(([key, score]) => ({
+    key,
+    label: shortProgressLabel(key),
+    strong: score === 'strong',
+  }));
+  const gaugeValue = riskProfile ? riskProfile.awareness_score : accuracy;
+  const gaugeLabel = riskProfile ? 'Awareness score' : 'Practice accuracy';
+  const gaugeDetail = riskProfile
+    ? `${standing?.label ?? 'Standing'} · ${standing?.vulnerability ?? '—'} vulnerability`
+    : summary.attempted
+      ? `${summary.correct} correct of ${summary.attempted} attempts`
+      : 'Complete scenarios to unlock accuracy.';
+
   return <section className="content progress-view">
-    <Header eyebrow="PERSONAL SECURITY / LEARNING" title="Progress" detail="See what you have practiced and what is next." />
+    <Header eyebrow="PERSONAL SECURITY / LEARNING" title="Progress" detail="Charts from your real practice and risk profile." />
     {standing && riskProfile && <div className={`standing-banner level-${standing.level} progress-standing`}>
       <div>
         <p className="card-kicker">CURRENT STANDING</p>
@@ -1045,10 +1222,32 @@ function ProgressView({ language, summary, riskProfile, onTraining, onOpenRecomm
         <small>{standing.vulnerability} vulnerability</small>
       </div>
     </div>}
-    <div className="progress-metrics"><article><span>SCENARIOS TRIED</span><strong>{summary.attempted}</strong></article><article><span>ACCURACY</span><strong>{summary.attempted ? `${accuracy}%` : '—'}</strong></article><article><span>MODULES COMPLETE</span><strong>{completed} / {summary.modules.length}</strong></article><article><span>SCENARIOS AVAILABLE</span><strong>{available}</strong></article></div>
+    <div className="progress-metrics"><article><span>SCENARIOS TRIED</span><strong>{summary.attempted}</strong></article><article><span>ACCURACY</span><strong>{summary.attempted ? `${accuracy}%` : '—'}</strong></article><article><span>MODULES COMPLETE</span><strong>{completed} / {summary.modules.length}</strong></article><article><span>CATALOG COVERED</span><strong>{available ? `${catalogProgress}%` : '—'}</strong></article></div>
+    <div className="progress-chart-grid">
+      <article className="progress-chart-card">
+        <p className="card-kicker">MODULE RINGS</p>
+        <h2>Completion by module</h2>
+        <ProgressRadialChart modules={radialModules} />
+      </article>
+      <article className="progress-chart-card">
+        <p className="card-kicker">PRACTICE VS CORRECT</p>
+        <h2>Coverage by module</h2>
+        <ProgressDualBarChart modules={dualModules} />
+      </article>
+      <article className="progress-chart-card">
+        <p className="card-kicker">STRENGTHS &amp; ACCURACY</p>
+        <h2>Risk areas vs results</h2>
+        <ProgressDivergingChart dimensions={dimensionRows} modules={moduleRows.filter((module) => module.attempted > 0).slice(0, 6)} />
+      </article>
+      <article className="progress-chart-card">
+        <p className="card-kicker">OVERALL GAUGE</p>
+        <h2>{gaugeLabel}</h2>
+        <ProgressGaugeChart value={gaugeValue} label={gaugeLabel} detail={gaugeDetail} />
+      </article>
+    </div>
     {recommendedTitle && <article className="progress-recommendation"><div><p className="card-kicker">RECOMMENDED NEXT</p><h2>{recommendedTitle}</h2><p>Continue where you will improve fastest.</p></div><button className="primary action-button" type="button" onClick={onOpenRecommended}>Open recommended module <b>→</b></button></article>}
     {summary.lastAttemptAt && <p className="progress-last-attempt">Last practice: {new Date(summary.lastAttemptAt).toLocaleString()}</p>}
-    <article className="progress-modules"><div className="section-heading"><div><p className="card-kicker">MODULE BREAKDOWN</p><h2>Practice over time</h2></div><button className="text-button" type="button" onClick={onTraining}>Continue training <b>&#8594;</b></button></div>
+    <article className="progress-modules"><div className="section-heading"><div><p className="card-kicker">MODULE BREAKDOWN</p><h2>Practice detail</h2></div><button className="text-button" type="button" onClick={onTraining}>Continue training <b>&#8594;</b></button></div>
       {summary.modules.length ? <div className="progress-module-list">{summary.modules.map((module) => { const percent = module.scenarioCount ? Math.min(100, Math.round((module.scenariosAttempted / module.scenarioCount) * 100)) : 0; const title = module.title[language] ?? module.title.en ?? module.slug; return <div className="progress-module" key={module.id}><div className="progress-module-heading"><strong>{title}</strong><span>{module.completed ? 'Complete' : `${module.scenariosAttempted} of ${module.scenarioCount} practiced`}</span></div><div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={module.scenarioCount} aria-valuenow={module.scenariosAttempted} aria-label={`${title} progress`}><i style={{ width: `${percent}%` }} /></div><small>{module.scenariosCorrect} correct responses</small></div>; })}</div> : <p>No published training modules are available yet.</p>}
     </article>
   </section>;
@@ -1179,7 +1378,7 @@ function CertificatesView({ accessToken, displayName, language, onTraining }: { 
       });
   };
 
-  return <section className="content">
+  return <section className="content certificates-view">
     <Header eyebrow="PERSONAL SECURITY / ACHIEVEMENTS" title="Certificates" detail="Verified proof of completed training." />
     {loading && <p className="page-state">Loading certificates...</p>}
     {error && !needsCertification && <div className="page-error" role="alert"><p>{error}</p><button className="text-button" onClick={load}>Retry</button></div>}
@@ -1576,7 +1775,7 @@ function OrganizationReports({ session, organizations }: { session: Session; org
     preview.print();
     setExporting(null);
   };
-  return <section className="content"><Header eyebrow="Reports / organization" title="Team risk report" detail="Export CSV, Word, or PDF." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><div className="report-exports"><button className="text-button" disabled={Boolean(exporting)} onClick={() => void downloadCsv()}>{exporting === 'csv' ? 'Preparing CSV...' : 'CSV'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadWord}>{exporting === 'word' ? 'Preparing Word...' : 'Word'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadPdf}>{exporting === 'pdf' ? 'Preparing PDF...' : 'PDF'} <b>↓</b></button></div></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{dashboard && <div className="report-board"><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount ?? 0}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees ?? 0}</strong></article><article><span>ATTEMPTS</span><strong>{dashboard.attempted ?? 0}</strong></article><article><span>ACCURACY</span><strong>{accuracy}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><article className="employee-panel report-people"><div className="section-heading"><div><p className="card-kicker">RECORDED PEOPLE</p><h2>Employee activity from the database</h2></div><span>{employeeRows.length} records</span></div>{employeeRows.length ? <div className="employee-list">{employeeRows.map((employee) => <div className="employee-row" key={employee.id}><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>)}</div> : <div className="empty-state"><span>0</span><p>No employee attempts are stored yet.<br /><small>Invite people and have them complete training to fill this report.</small></p></div>}</article></div>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
+  return <section className="content reports-view"><Header eyebrow="Reports / organization" title="Team risk report" detail="Export CSV, Word, or PDF." />{organizations.length ? <><div className="org-toolbar"><label>Workspace<select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{organizations.map((organization) => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label><div className="report-exports"><button className="text-button" disabled={Boolean(exporting)} onClick={() => void downloadCsv()}>{exporting === 'csv' ? 'Preparing CSV...' : 'CSV'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadWord}>{exporting === 'word' ? 'Preparing Word...' : 'Word'} <b>↓</b></button><button className="text-button" disabled={Boolean(exporting)} onClick={downloadPdf}>{exporting === 'pdf' ? 'Preparing PDF...' : 'PDF'} <b>↓</b></button></div></div>{loading && <p className="page-state" role="status">Loading report...</p>}{message && <div className="page-error" role="alert"><p>{message}</p><button className="text-button" onClick={() => setReload((attempt) => attempt + 1)}>Retry report</button></div>}{dashboard && <div className="report-board"><div className="org-metrics"><article><span>EMPLOYEES</span><strong>{dashboard.employeeCount ?? 0}</strong></article><article><span>TRAINED</span><strong>{dashboard.trainedEmployees ?? 0}</strong></article><article><span>ATTEMPTS</span><strong>{dashboard.attempted ?? 0}</strong></article><article><span>ACCURACY</span><strong>{accuracy}%</strong></article></div><TeamRiskPanel teamRisk={dashboard.teamRisk} /><article className="employee-panel report-people"><div className="section-heading"><div><p className="card-kicker">RECORDED PEOPLE</p><h2>Employee activity from the database</h2></div><span>{employeeRows.length} records</span></div>{employeeRows.length ? <div className="employee-list">{employeeRows.map((employee) => <div className="employee-row" key={employee.id}><strong>{employee.name}</strong><span>{employee.attempted} attempts · {employee.correct} correct</span></div>)}</div> : <div className="empty-state"><span>0</span><p>No employee attempts are stored yet.<br /><small>Invite people and have them complete training to fill this report.</small></p></div>}</article></div>}</> : <article className="role-empty"><h2>Create an organization workspace first.</h2></article>}</section>;
 }
 
 function OrganizationSettingsPanel({ session, organizations, setOrganizations }: { session: Session; organizations: OrgMembership[]; setOrganizations: Dispatch<SetStateAction<OrgMembership[]>> }) {
@@ -1632,7 +1831,7 @@ function Overview({ displayName, onboardingComplete, riskProfile, trainingSummar
   const standing = riskProfile ? awarenessStanding(riskProfile.awareness_score) : null;
   const weakCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'weak').length;
   const strongCount = Object.values(riskProfile?.category_scores ?? {}).filter((score) => score === 'strong').length;
-  return <section className="content"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Practice short decisions. Build safer habits." />{organizationName && onOrganization && <div className="org-personal-banner"><div><p className="card-kicker">YOUR ORGANIZATION</p><h2>{organizationName}</h2><p>Your learning home. Team metrics live in Organization.</p></div><button className="text-button" type="button" onClick={onOrganization}>Open organization <b>→</b></button></div>}<div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Take the opening quiz'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Based on your risk profile.' : 'Continue your next module.' : 'Ten short scenarios unlock training.'}</p><button onClick={onboardingComplete ? onOpenRecommended : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="training-catalog-wrap"><div className="module-grid">{visibleModules.map(module => <article className={`module-card ${module.tone}`} key={module.slug}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button type="button" onClick={() => onExploreModule(module.slug)}>Explore <b>&#8594;</b></button></article>)}</div>{modules.length > 3 && <button type="button" className="list-more-button" onClick={() => setShowAllModules((open) => !open)}>{showAllModules ? 'Show less' : 'More'}</button>}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas show here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Practice your focus area next.` : 'Take the quiz to see what needs practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.</p></>}</div></article></div></section>;
+  return <section className="content dashboard-view"><Header eyebrow={today} title={timeGreeting(displayName)} detail="Practice short decisions. Build safer habits." />{organizationName && onOrganization && <div className="org-personal-banner"><div><p className="card-kicker">YOUR ORGANIZATION</p><h2>{organizationName}</h2><p>Your learning home. Team metrics live in Organization.</p></div><button className="text-button" type="button" onClick={onOrganization}>Open organization <b>→</b></button></div>}<div className="overview-grid"><article className={`awareness-card ${standing ? `level-${standing.level}` : ''}`}><div><p className="card-kicker">YOUR STANDING</p><div className="score-line"><strong>{onboardingComplete && standing ? standing.label : 'Not assessed'}</strong><span>{onboardingComplete && standing ? `Vulnerability: ${standing.vulnerability}` : 'Take the opening quiz'}</span></div></div><div className="ring"><span>{riskProfile?.awareness_score ?? '—'}</span><small>{onboardingComplete ? '/100' : ''}</small></div></article><article className="next-card"><p className="card-kicker">YOUR NEXT STEP</p><h2>{onboardingComplete ? `Practice ${trainingSummary.recommendation?.title.en ?? riskProfile?.focus_dimension ?? 'your focus area'}` : 'Take the opening quiz'}</h2><p>{onboardingComplete ? trainingSummary.recommendation?.reason === 'focus-area' ? 'Based on your risk profile.' : 'Continue your next module.' : 'Ten short scenarios unlock training.'}</p><button onClick={onboardingComplete ? onOpenRecommended : onAssessment}>{onboardingComplete ? 'Open training' : 'Start opening quiz'} <b>→</b></button></article></div>{onboardingComplete && riskProfile && <div className="org-metrics employee-metrics"><article><span>STRONGEST AREA</span><strong>{riskProfile.strongest_dimension}</strong></article><article><span>FOCUS AREA</span><strong>{riskProfile.focus_dimension}</strong></article><article><span>WEAKNESSES</span><strong>{weakCount}</strong></article><article><span>STRENGTHS</span><strong>{strongCount}</strong></article></div>}<div className="section-heading"><div><p className="card-kicker">YOUR WORKSPACE</p><h2>Build your resilience</h2></div><button className="text-button" onClick={onTraining}>View all training <b>&#8594;</b></button></div><div className="training-catalog-wrap"><div className="module-grid">{visibleModules.map(module => <article className={`module-card ${module.tone}`} key={module.slug}><span>{module.label}</span><h3>{module.title}</h3><p>{module.meta}</p><button type="button" onClick={() => onExploreModule(module.slug)}>Explore <b>&#8594;</b></button></article>)}</div>{modules.length > 3 && <button type="button" className="list-more-button" onClick={() => setShowAllModules((open) => !open)}>{showAllModules ? 'Show less' : 'More'}</button>}</div><div className="lower-grid"><article className="focus-card"><p className="card-kicker">RISK PROFILE</p><h2>{onboardingComplete ? `Focus area: ${riskProfile?.focus_dimension ?? 'Continued practice'}` : 'Your focus areas show here'}</h2><p>{onboardingComplete ? `Strongest area: ${riskProfile?.strongest_dimension ?? 'Verification habits'}. Practice your focus area next.` : 'Take the quiz to see what needs practice.'}</p><button className="text-button" onClick={onAssessment}>{onboardingComplete ? 'Retake assessment' : 'Take assessment'} <b>&#8594;</b></button></article><article className="activity-card"><p className="card-kicker">RECENT ACTIVITY</p><div className="empty-state">{trainingSummary.attempted ? <p>{trainingSummary.attempted} scenario attempt{trainingSummary.attempted === 1 ? '' : 's'} saved.<br /><small>{trainingSummary.correct} correct response{trainingSummary.correct === 1 ? '' : 's'} so far.</small></p> : <><span>ai</span><p>No activity yet.</p></>}</div></article></div></section>;
 }
 
 function ModuleTrainingView({ language, modules, summary, selectedModuleSlug, onModuleSelect, selectedScenarioSlug, onScenarioSelect, onNextScenario, onRetryCatalog, onOpenCertificates, scenario, loading, error, result, answer, streak, submitting, whyExplanation, whyError, whyLoading, whyQuestionOpen, whyQuestionText, onWhyQuestionTextChange, onWhyQuestionOpenChange, onAskWhy, onAnswer, onSubmit, aiPractice, aiPracticeGenerating, onGenerateAiPractice }: { language: Language; modules: TrainingModule[]; summary: TrainingSummary; selectedModuleSlug: string | null; onModuleSelect: (moduleSlug: string) => void; selectedScenarioSlug: string | null; onScenarioSelect: (scenarioSlug: string) => void; onNextScenario: () => void; onRetryCatalog: () => void; onOpenCertificates: () => void; scenario: TrainingScenario | null; loading: boolean; error: string | null; result: { isCorrect: boolean; feedback: string; explanation: string; correctOptionKey: TrainingOptionKey; moduleCompleted: boolean } | null; answer: TrainingOptionKey | null; streak: number; submitting: boolean; whyExplanation: string | null; whyError: string | null; whyLoading: boolean; whyQuestionOpen: boolean; whyQuestionText: string; onWhyQuestionTextChange: (question: string) => void; onWhyQuestionOpenChange: (open: boolean) => void; onAskWhy: () => void; onAnswer: (answer: TrainingOptionKey | null) => void; onSubmit: () => void; aiPractice: AiPracticeScenarioSummary[]; aiPracticeGenerating: boolean; onGenerateAiPractice: (prompt?: string) => void }) {

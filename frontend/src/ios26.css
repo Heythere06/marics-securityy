@@ -393,7 +393,10 @@ button:focus-visible {
 .content.risk-profile-view,
 .content.organization-view,
 .content.progress-view,
-.content.training-view {
+.content.training-view,
+.content.certificates-view,
+.content.dashboard-view,
+.content.reports-view {
   position: relative;
   isolation: isolate;
   background-color: #0b1220;
@@ -404,7 +407,10 @@ button:focus-visible {
 .content.risk-profile-view::before,
 .content.organization-view::before,
 .content.progress-view::before,
-.content.training-view::before {
+.content.training-view::before,
+.content.certificates-view::before,
+.content.dashboard-view::before,
+.content.reports-view::before {
   content: '';
   position: absolute;
   inset: -24px;
@@ -412,14 +418,17 @@ button:focus-visible {
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
-  filter: blur(14px) saturate(1.05) brightness(.92) contrast(1.02);
-  transform: scale(1.04);
+  filter: blur(7px) saturate(1.06) brightness(.96) contrast(1.02);
+  transform: scale(1.03);
 }
 
 .content.risk-profile-view::after,
 .content.organization-view::after,
 .content.progress-view::after,
-.content.training-view::after {
+.content.training-view::after,
+.content.certificates-view::after,
+.content.dashboard-view::after,
+.content.reports-view::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -432,7 +441,7 @@ button:focus-visible {
 }
 
 .content.organization-view::before {
-  background-image: url('/assets/bg-organization.jpg?v=2');
+  background-image: url('/assets/bg-organization.jpg?v=3');
 }
 
 .content.progress-view::before {
@@ -440,7 +449,19 @@ button:focus-visible {
 }
 
 .content.training-view::before {
-  background-image: url('/assets/bg-training.jpg?v=2');
+  background-image: url('/assets/bg-training.jpg?v=3');
+}
+
+.content.certificates-view::before {
+  background-image: url('/assets/bg-certificates.jpg');
+}
+
+.content.dashboard-view::before {
+  background-image: url('/assets/bg-dashboard.jpg?v=3');
+}
+
+.content.reports-view::before {
+  background-image: url('/assets/bg-reports.jpg?v=3');
 }
 
 .content.risk-profile-view::after {
@@ -448,7 +469,7 @@ button:focus-visible {
 }
 
 .content.organization-view::after {
-  background: linear-gradient(160deg, rgba(6, 18, 42, .4) 0%, rgba(8, 28, 68, .26) 48%, rgba(6, 18, 42, .46) 100%);
+  background: linear-gradient(160deg, rgba(10, 22, 36, .4) 0%, rgba(18, 34, 52, .26) 48%, rgba(10, 22, 36, .46) 100%);
 }
 
 .content.progress-view::after {
@@ -456,13 +477,28 @@ button:focus-visible {
 }
 
 .content.training-view::after {
-  background: linear-gradient(160deg, rgba(24, 8, 42, .42) 0%, rgba(42, 12, 72, .28) 48%, rgba(24, 8, 42, .48) 100%);
+  background: linear-gradient(160deg, rgba(8, 18, 42, .42) 0%, rgba(12, 36, 72, .28) 48%, rgba(8, 18, 42, .48) 100%);
+}
+
+.content.certificates-view::after {
+  background: linear-gradient(160deg, rgba(42, 18, 8, .4) 0%, rgba(72, 36, 12, .24) 48%, rgba(28, 12, 36, .46) 100%);
+}
+
+.content.dashboard-view::after {
+  background: linear-gradient(160deg, rgba(12, 24, 40, .4) 0%, rgba(20, 36, 56, .26) 48%, rgba(12, 24, 40, .46) 100%);
+}
+
+.content.reports-view::after {
+  background: linear-gradient(160deg, rgba(12, 28, 48, .38) 0%, rgba(24, 48, 72, .24) 48%, rgba(12, 28, 48, .44) 100%);
 }
 
 .content.risk-profile-view > .page-header,
 .content.organization-view > .page-header,
 .content.progress-view > .page-header,
-.content.training-view > .page-header {
+.content.training-view > .page-header,
+.content.certificates-view > .page-header,
+.content.dashboard-view > .page-header,
+.content.reports-view > .page-header {
   padding: 18px 20px;
   border-radius: 22px;
   background: rgba(8, 14, 28, .48);
@@ -475,7 +511,10 @@ button:focus-visible {
 .content.risk-profile-view .page-header h1,
 .content.organization-view .page-header h1,
 .content.progress-view .page-header h1,
-.content.training-view .page-header h1 {
+.content.training-view .page-header h1,
+.content.certificates-view .page-header h1,
+.content.dashboard-view .page-header h1,
+.content.reports-view .page-header h1 {
   background: none;
   -webkit-text-fill-color: #fff;
   color: #fff;
@@ -485,7 +524,10 @@ button:focus-visible {
 .content.risk-profile-view .page-header .lede,
 .content.organization-view .page-header .lede,
 .content.progress-view .page-header .lede,
-.content.training-view .page-header .lede {
+.content.training-view .page-header .lede,
+.content.certificates-view .page-header .lede,
+.content.dashboard-view .page-header .lede,
+.content.reports-view .page-header .lede {
   color: #eef3f8;
   text-shadow: none;
 }
@@ -493,7 +535,10 @@ button:focus-visible {
 .content.risk-profile-view > .page-header .eyebrow,
 .content.organization-view > .page-header .eyebrow,
 .content.progress-view > .page-header .eyebrow,
-.content.training-view > .page-header .eyebrow {
+.content.training-view > .page-header .eyebrow,
+.content.certificates-view > .page-header .eyebrow,
+.content.dashboard-view > .page-header .eyebrow,
+.content.reports-view > .page-header .eyebrow {
   color: #ffc4aa;
   text-shadow: none;
 }
@@ -501,6 +546,7 @@ button:focus-visible {
 /* Solid enough panels so dark copy stays readable over photo BGs */
 .content.progress-view .progress-recommendation,
 .content.progress-view .progress-modules,
+.content.progress-view .progress-chart-card,
 .content.progress-view .progress-metrics article,
 .content.risk-profile-view .risk-score,
 .content.risk-profile-view .risk-highlights,
@@ -511,9 +557,45 @@ button:focus-visible {
 .content.training-view .training-learning-grid article,
 .content.training-view .scenario-card,
 .content.training-view .ai-practice-panel,
-.content.training-view .role-empty {
+.content.training-view .role-empty,
+.content.certificates-view .certificate-card,
+.content.certificates-view .certificate-empty,
+.content.dashboard-view .awareness-card,
+.content.dashboard-view .next-card,
+.content.dashboard-view .focus-card,
+.content.dashboard-view .activity-card,
+.content.dashboard-view .module-card,
+.content.dashboard-view .org-personal-banner,
+.content.dashboard-view .org-metrics article,
+.content.dashboard-view .employee-metrics article,
+.content.dashboard-view .role-banner,
+.content.dashboard-view .employee-panel {
   background: rgba(255, 255, 255, .92) !important;
   color: #102536;
+}
+
+.content.dashboard-view > .page-state,
+.content.dashboard-view .section-heading h2 {
+  color: #f4f7fb !important;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .45);
+}
+
+.content.dashboard-view .section-heading .card-kicker {
+  color: #ffc4aa;
+}
+
+.content.reports-view .org-metrics article,
+.content.reports-view .team-risk,
+.content.reports-view .employee-panel,
+.content.reports-view .role-empty {
+  background: rgba(255, 255, 255, .92) !important;
+  color: #102536;
+}
+
+.content.reports-view > .page-state,
+.content.reports-view > .page-error {
+  color: #f4f7fb !important;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .45);
 }
 
 .content.training-view .training-module-card.tone-0,
@@ -543,6 +625,12 @@ button:focus-visible {
 .content.progress-view .progress-metrics article strong,
 .content.progress-view .progress-recommendation h2,
 .content.progress-view .progress-recommendation p,
+.content.progress-view .progress-chart-card h2,
+.content.progress-view .progress-chart-sub,
+.content.progress-view .progress-chart-legend,
+.content.progress-view .progress-dual-label,
+.content.progress-view .progress-dual-value,
+.content.progress-view .progress-gauge-copy,
 .content.progress-view .progress-module-heading,
 .content.progress-view .progress-module-heading span,
 .content.progress-view .progress-module small,
@@ -573,7 +661,9 @@ button:focus-visible {
 .content.progress-view > .page-state,
 .content.training-view > .page-state,
 .content.training-view > .page-error,
-.content.training-view .training-material-empty {
+.content.training-view .training-material-empty,
+.content.certificates-view > .page-state,
+.content.certificates-view > .page-error {
   color: #f4f7fb !important;
   text-shadow: 0 1px 10px rgba(0, 0, 0, .45);
 }
@@ -663,6 +753,7 @@ button:focus-visible {
 .role-banner,
 .standing-banner,
 .progress-recommendation,
+.progress-chart-card,
 .ai-practice-panel,
 .settings-panel,
 .risk-score,
@@ -1081,6 +1172,7 @@ button:focus-visible {
 .org-personal-banner,
 .standing-banner,
 .progress-recommendation,
+.progress-chart-card,
 .ai-practice-panel,
 .settings-panel,
 .risk-score,
@@ -1128,6 +1220,7 @@ button:focus-visible {
 .org-personal-banner:hover,
 .standing-banner:hover,
 .progress-recommendation:hover,
+.progress-chart-card:hover,
 .ai-practice-panel:hover,
 .settings-panel:hover,
 .risk-score:hover,
@@ -1239,6 +1332,7 @@ button:focus-visible {
   .org-personal-banner:hover,
   .standing-banner:hover,
   .progress-recommendation:hover,
+  .progress-chart-card:hover,
   .ai-practice-panel:hover,
   .settings-panel:hover,
   .risk-score:hover,
@@ -1550,6 +1644,250 @@ button:focus-visible {
 
 .scenario-card.training-quiz:has(.quiz-result.bad) {
   box-shadow: 0 0 0 1px rgba(255, 69, 58, .24), var(--ios-shadow);
+}
+
+.progress-chart-grid {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.progress-chart-card {
+  min-height: 320px;
+  padding: 22px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 6px;
+}
+
+.progress-chart-card h2 {
+  margin: 0 0 8px;
+  color: #102536;
+  font: 400 22px Georgia, 'Times New Roman', serif;
+}
+
+.progress-chart-visual {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+}
+
+.progress-radial {
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, .9fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.progress-radial svg {
+  width: 100%;
+  max-width: 220px;
+  justify-self: center;
+}
+
+.progress-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.progress-chart-legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  color: #3d5566;
+  font-size: 11px;
+}
+
+.progress-chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.progress-chart-legend strong {
+  color: #102536;
+  font-size: 11px;
+}
+
+.progress-dual-bars {
+  gap: 10px;
+}
+
+.progress-dual-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 110px) 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.progress-dual-label,
+.progress-dual-value {
+  color: #3d5566;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-dual-value {
+  min-width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-dual-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(16, 37, 54, .08);
+  overflow: hidden;
+}
+
+.progress-dual-track b,
+.progress-dual-track i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.progress-dual-track b {
+  background: #5b8def;
+}
+
+.progress-dual-track i {
+  top: 3px;
+  bottom: 3px;
+  background: #d4a574;
+}
+
+.progress-dual-key {
+  margin-top: 10px;
+  display: flex;
+  gap: 16px;
+  color: #60798a;
+  font-size: 11px;
+}
+
+.progress-dual-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-dual-key b,
+.progress-dual-key i {
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.progress-dual-key b { background: #5b8def; }
+.progress-dual-key i { background: #d4a574; }
+
+.progress-diverging {
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.progress-diverging-axis {
+  align-self: stretch;
+  background: rgba(16, 37, 54, .12);
+}
+
+.progress-diverging-col {
+  display: grid;
+  gap: 8px;
+}
+
+.progress-chart-sub {
+  margin: 0 0 2px;
+  color: #60798a;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.progress-diverging-row {
+  display: grid;
+  gap: 4px;
+}
+
+.progress-diverging-row span,
+.progress-diverging-row strong {
+  color: #3d5566;
+  font-size: 11px;
+}
+
+.progress-diverging-row.accuracy {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+}
+
+.progress-diverging-row.accuracy span { grid-column: 1; }
+.progress-diverging-row.accuracy strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.progress-diverging-row.accuracy .progress-diverging-bar { grid-column: 1; }
+
+.progress-diverging-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(16, 37, 54, .08);
+  overflow: hidden;
+}
+
+.progress-diverging-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.progress-diverging-row.strong .progress-diverging-bar i { background: #34c759; }
+.progress-diverging-row.weak .progress-diverging-bar i { background: #f59e0b; }
+.progress-diverging-row.accuracy .progress-diverging-bar i { background: #5b8def; }
+
+.progress-gauge {
+  justify-items: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.progress-gauge svg {
+  width: min(100%, 260px);
+}
+
+.progress-gauge-copy strong {
+  display: block;
+  color: #102536;
+  font-size: 13px;
+}
+
+.progress-gauge-copy p {
+  margin: 4px 0 0;
+  color: #526b7b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.progress-chart-empty {
+  margin: 18px 0 0;
+  color: #60798a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .progress-chart-grid { grid-template-columns: 1fr; }
+  .progress-radial { grid-template-columns: 1fr; }
+  .progress-diverging { grid-template-columns: 1fr; }
+  .progress-diverging-axis { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
